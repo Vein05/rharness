@@ -1,0 +1,11 @@
+{
+  "name": "tacl",
+  "description": "Recommendation-only open-model panel for a TACL original submission. Uses the public TACL process effective May 1, 2024: general review, mandatory revisions, optional revisions, questions, and an advised A/B/C/D action-editor outcome. No numeric scores. Target and tough tiers are used during revision; Kimi remains a baseline/final-only holdout.",
+  "models": [
+    {"id": "deepseek/deepseek-v4-flash", "label": "deepseek-flash", "tier": "target", "prompts": ["tacl-form"], "samples": 6},
+    {"id": "xiaomi/mimo-v2.5", "label": "mimo", "tier": "target", "prompts": ["tacl-form"], "samples": 6},
+    {"id": "nvidia/nemotron-3-super-120b-a12b", "label": "nemotron-super", "tier": "target", "prompts": ["tacl-form"], "samples": 6, "reasoning_effort": "medium"},
+    {"id": "deepseek/deepseek-v4-pro", "label": "tough-canary-os", "tier": "tough", "prompts": ["tacl-form"], "samples": 3},
+    {"id": "moonshotai/kimi-k2.5", "label": "holdout-os", "tier": "holdout", "prompts": ["tacl-form"], "samples": 3}
+  ]
+}

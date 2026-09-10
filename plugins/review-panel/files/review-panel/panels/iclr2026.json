@@ -1,0 +1,54 @@
+{
+  "name": "iclr2026",
+  "description": "ICLR 2026 open-weight review panel. Uses the real ICLR 2026 form (even-only 0-10 overall rating; soundness/presentation/contribution 1-4; confidence 1-5) via prompts/iclr-form.md (rubric'd) and prompts/iclr-naive.md (reviewer who pasted the PDF into a chatbot). target = free-tier-chatbot threat model; tough = the reasoning canary that must not drop while targets rise; holdout is never consulted during revision, run it only at baseline and final. Calibrate the model set against an accepted sibling paper before trusting absolute scores; open models drift between overgenerous and too harsh across releases.",
+  "models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "deepseek-flash",
+      "tier": "target",
+      "prompts": [
+        "iclr-form",
+        "iclr-naive"
+      ],
+      "samples": 6
+    },
+    {
+      "id": "xiaomi/mimo-v2.5",
+      "label": "mimo",
+      "tier": "target",
+      "prompts": [
+        "iclr-form",
+        "iclr-naive"
+      ],
+      "samples": 6
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b",
+      "label": "nemotron-super",
+      "tier": "target",
+      "prompts": [
+        "iclr-form"
+      ],
+      "samples": 6,
+      "reasoning_effort": "medium"
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro",
+      "label": "tough-canary-os",
+      "tier": "tough",
+      "prompts": [
+        "iclr-form"
+      ],
+      "samples": 3
+    },
+    {
+      "id": "moonshotai/kimi-k2.5",
+      "label": "holdout-os",
+      "tier": "holdout",
+      "prompts": [
+        "iclr-form"
+      ],
+      "samples": 3
+    }
+  ]
+}

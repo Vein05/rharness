@@ -1,0 +1,22 @@
+# Shared matplotlib style for paper plots. Use: plt.style.use('figures/paper.mplstyle')
+font.family: Times New Roman
+font.size: 8
+axes.titlesize: 9
+axes.labelsize: 8
+xtick.labelsize: 7
+ytick.labelsize: 7
+legend.fontsize: 7
+axes.spines.top: False
+axes.spines.right: False
+axes.grid: True
+axes.grid.axis: y
+grid.color: E5E7EB
+grid.linewidth: 0.6
+axes.prop_cycle: cycler('color', ['1D4ED8', '15803D', 'B91C1C', 'B45309', '7E22CE', '4B5563'])
+lines.linewidth: 1.5
+figure.figsize: 3.03, 2.1
+figure.dpi: 150
+savefig.bbox: tight
+savefig.pad_inches: 0.02
+pdf.fonttype: 42
+mathtext.fontset: stix

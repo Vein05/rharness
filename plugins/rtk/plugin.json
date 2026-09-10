@@ -1,0 +1,7 @@
+{
+  "name": "rtk",
+  "description": "Token-saving command rewriter for Claude Code (rtk-ai/rtk)",
+  "version": "0.1.0",
+  "harness": ["claude"],
+  "requires": {"binaries": ["rtk", "jq"], "python": ">=3.9"}
+}

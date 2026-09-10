@@ -1,0 +1,11 @@
+{
+  "name": "aaai2027-zero",
+  "description": "Zero-cost panel using OpenRouter :free variants. $0.00 per run. Rate limits: 20 req/min, 50 req/day (1000/day if >=$10 credits ever purchased) — sized at 21 reviews to fit under 50/day. Lower concurrency to respect the per-minute cap.",
+  "concurrency": 3,
+  "models": [
+    {"id": "nvidia/nemotron-3-super-120b-a12b:free", "label": "nemotron-super-free", "tier": "target", "prompts": ["form", "naive"], "samples": 3},
+    {"id": "google/gemma-4-31b-it:free", "label": "gemma-free", "tier": "target", "prompts": ["form", "naive"], "samples": 3},
+    {"id": "openai/gpt-oss-20b:free", "label": "gpt-oss-free", "tier": "target", "prompts": ["form", "naive"], "samples": 3},
+    {"id": "nvidia/nemotron-3-ultra-550b-a55b:free", "label": "tough-canary-zero", "tier": "tough", "prompts": ["form"], "samples": 3}
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "wandb",
+  "description": "Weights & Biases tracking rules and a run-init helper",
+  "version": "0.1.0",
+  "harness": ["claude", "codex"],
+  "requires": {"binaries": [], "python": ">=3.9"}
+}
