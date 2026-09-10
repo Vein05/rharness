@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/cover.svg" alt="rharness" width="100%"></p>
+
 # rharness
 
 A one-command setup for ML and NLP researchers who work with coding agents
@@ -85,6 +87,12 @@ replaced only if it still matches its recorded hash; otherwise it is kept and
 a diff is printed. In `AGENTS.md` and `paper/writing.md`, rharness owns only
 the text between `<!-- rharness:begin ... -->` and `<!-- rharness:end ... -->`
 markers; everything outside is yours.
+
+## Cover art
+
+`assets/cover/build.py` generates `assets/cover.svg` from the inlined brand marks in
+`assets/cover/icons/`; `assets/cover-social.png` is the 1280x640 GitHub social preview.
+Brand marks belong to their owners and are used unmodified.
 
 ## Development
 
