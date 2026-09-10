@@ -145,7 +145,10 @@ def lint_workspace(ws, cfg):
     if ws.agents_path.exists():
         rows = set(ROW_RE.findall(_read(ws.agents_path)))
         for r in sorted(rows - dirs):
-            W("AGENTS.md", f"table row `{r}/` has no directory")
+            if (ws.root / r).is_dir():
+                W("AGENTS.md", f"table row `{r}/` is not a project directory (no CHARTER.md, AGENTS.md, or .git)")
+            else:
+                W("AGENTS.md", f"table row `{r}/` has no directory")
         for d in sorted(dirs - rows):
             W("AGENTS.md", f"project {d} has no row in the AGENTS.md table")
     else:

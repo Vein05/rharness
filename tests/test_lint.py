@@ -158,6 +158,15 @@ def test_workspace_table_mismatch(ws):
     assert any("p" in x["message"] and "no row" in x["message"] for x in f if x["project"] == ".")
 
 
+def test_workspace_row_for_non_project_dir(ws):
+    _clean_project(ws, "p")
+    (ws / "notes").mkdir()
+    a = (ws / "AGENTS.md").read_text().replace("| `p/` |", "| `notes/` |")
+    (ws / "AGENTS.md").write_text(a)
+    _, msgs, _ = _run(ws)
+    assert any("notes" in m and "not a project directory" in m for m in msgs)
+
+
 def test_workspace_root_clutter(ws):
     _clean_project(ws)
     (ws / "old.zip").write_bytes(b""); (ws / "paper.pdf").write_bytes(b""); (ws / "tmp_bench").mkdir()
