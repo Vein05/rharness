@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 from .manifest import Manifest, today
-from .paths import STORE_ROOT
+from .plugin import template_path
 from .regions import get_region, upsert_region
 from .templates import render
 from .workspace import PROJECT_MANIFEST_REL
@@ -75,8 +75,8 @@ def _apply_manifest(root: Path, m: Manifest, prefix: str, ctx: dict, force: bool
     for rel, entry in sorted(m.files.items()):
         if entry.get("owner") == "user" or not entry.get("source"):
             continue
-        src = STORE_ROOT / entry["source"]
-        if not src.exists():
+        src = template_path(entry["source"])
+        if src is None or not src.exists():
             continue
         target = root / rel
         label = f"{prefix}{rel}"

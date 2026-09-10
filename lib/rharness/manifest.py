@@ -33,6 +33,7 @@ class Manifest:
             "projects": [],
             "files": {},
             "hooks": {},
+            "plugin_sources": {},
             "ctx": dict(ctx or {}),
         }
         return cls(path, data)
@@ -76,6 +77,10 @@ class Manifest:
     @property
     def hooks(self):
         return self.data.setdefault("hooks", {})
+
+    @property
+    def plugin_sources(self):
+        return self.data.setdefault("plugin_sources", {})
 
     @property
     def ctx(self):

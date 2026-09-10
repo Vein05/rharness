@@ -254,3 +254,10 @@ objects with the same fields.
   by this note.
 - 2026-09-09: `lint.toml` is a flat `key = value` file parsed by a minimal
   reader so Python 3.9 (no `tomllib`) stays supported.
+- 2026-09-09: plugin sources moved from "deferred" into version one.
+  `rharness add` accepts a built-in name, a local path, a git URL, or
+  `owner/repo[/subdir]` on GitHub; external plugins are cached under
+  `~/.rharness/plugins/<name>/` and their source recorded in the manifest
+  (`plugin_sources`). `rharness plugin new` scaffolds a plugin.
+  `plugin.json` gains `requires.env`, reported after install. Documented in
+  `docs/plugins.md`.

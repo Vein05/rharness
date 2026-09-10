@@ -171,3 +171,11 @@ def test_shipped_plugin_manifests_valid():
         assert meta["name"] == d.name
         assert set(meta["harness"]) <= {"claude", "codex"}
         assert (d / "agents.md").exists()
+
+
+def test_add_reports_missing_env_and_binaries(ws, tmp_path):
+    fake = tmp_path / "fakebin"; fake.mkdir()
+    code, out, err = run_cli(["add", "review-panel"], cwd=ws,
+                             env={"PATH": str(fake), "OPENROUTER_API_KEY": ""})
+    assert code == 0, err
+    assert "OPENROUTER_API_KEY" in out and "pdftotext" in out

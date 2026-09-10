@@ -7,8 +7,8 @@ from . import __version__, gitutil
 from .manifest import Manifest, today
 from .paths import BASE_DIR
 from .templates import copy_tree
-from .plugin import (PluginNotFound, apply_all_project_files, install_plugin,
-                     list_available, uninstall_plugin)
+from .plugin import (PluginNotFound, apply_all_project_files, available_plugins,
+                     install_plugin, scaffold_plugin, uninstall_plugin)
 from .regions import get_region, upsert_region
 from .workspace import (MANIFEST_REL, PROJECT_MANIFEST_REL, NotAWorkspace, Workspace,
                         detect_projects, find_root)
@@ -50,11 +50,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("slug", type=slug_type)
     s.add_argument("--title", help="human title (default: slug)")
 
-    s = sub.add_parser("add", help="install a plugin")
-    s.add_argument("name")
+    s = sub.add_parser("add", help="install a plugin: built-in name, local path, git URL, or owner/repo[/subdir]")
+    s.add_argument("name", metavar="plugin")
+    s.add_argument("--refresh", action="store_true", help="re-fetch an external plugin before installing")
     s = sub.add_parser("remove", help="uninstall a plugin")
     s.add_argument("name")
-    sub.add_parser("list", help="list plugins")
+    sub.add_parser("list", help="list plugins: built-in, fetched, and installed here")
+    s = sub.add_parser("plugin", help="plugin authoring")
+    ps = s.add_subparsers(dest="plugin_cmd")
+    pn = ps.add_parser("new", help="scaffold a plugin directory")
+    pn.add_argument("name", type=slug_type)
+    pn.add_argument("--dir", default=".", help="parent directory (default: cwd)")
 
     s = sub.add_parser("adopt", help="retrofit an existing workspace or project")
     s.add_argument("dir", nargs="?", default=".")
@@ -228,7 +234,27 @@ def run_adopt(args):
 
 def run_add(args):
     ws = Workspace.open(override=args.workspace)
-    return install_plugin(ws, args.name, dry_run=args.dry_run)
+    return install_plugin(ws, args.name, dry_run=args.dry_run, refresh=args.refresh)
+
+
+def run_plugin(args):
+    if args.plugin_cmd != "new":
+        err("usage: rharness plugin new <name> [--dir DIR]")
+        return 2
+    dest = Path(args.dir).resolve()
+    try:
+        written = scaffold_plugin(dest, args.name)
+    except FileExistsError as e:
+        err(f"{e} already exists")
+        return 1
+    except ValueError as e:
+        err(str(e))
+        return 2
+    print(f"Created plugin {args.name} at {dest / args.name}")
+    for rel in written:
+        print(f"  wrote {rel}")
+    print(f"Next: edit plugin.json and agents.md, then `rharness add {dest / args.name}` to try it")
+    return 0
 
 
 def run_remove(args):
@@ -242,8 +268,16 @@ def run_remove(args):
 def run_list(args):
     ws = Workspace.open(override=args.workspace)
     installed = set(ws.manifest.plugins)
-    for name in list_available():
-        print(f"{name:14s} {'installed' if name in installed else 'available'}")
+    sources = ws.manifest.plugin_sources
+    rows = []
+    for name, plugin in available_plugins().items():
+        rows.append((name, plugin.origin, "installed" if name in installed else "available",
+                     sources.get(name, ""), plugin.meta.get("description", "")))
+    for name in sorted(installed - set(available_plugins())):
+        rows.append((name, "missing", "installed", sources.get(name, ""), "directory not found; re-add it"))
+    for name, origin, status, source, desc in rows:
+        tail = f"  {source}" if source else ""
+        print(f"{name:14s} {origin:8s} {status:10s} {desc}{tail}")
     return 0
 
 

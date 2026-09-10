@@ -1,7 +1,18 @@
 {
   "name": "review-panel",
-  "description": "Simulated LLM reviewer panel with tiers, a holdout canary, and a hard spend ceiling",
+  "description": "Simulated LLM reviewer panel via OpenRouter, with tiers, a holdout canary, and a hard spend ceiling",
   "version": "0.1.0",
-  "harness": ["claude", "codex"],
-  "requires": {"binaries": ["pdftotext"], "python": ">=3.9"}
+  "harness": [
+    "claude",
+    "codex"
+  ],
+  "requires": {
+    "binaries": [
+      "pdftotext"
+    ],
+    "env": [
+      "OPENROUTER_API_KEY"
+    ],
+    "python": ">=3.9"
+  }
 }
