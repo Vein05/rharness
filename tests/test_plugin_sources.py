@@ -29,7 +29,7 @@ def _git_repo(path: Path):
 
 def test_add_from_local_path(ws, tmp_path, home):
     src = _make_plugin(tmp_path / "ext", "extra")
-    code, out, err = run_cli(["add", str(src)], cwd=ws)
+    code, out, err = run_cli(["--yes", "add", str(src)], cwd=ws)
     assert code == 0, err
     assert (ws / "extra" / "tool.py").read_text() == f"print('extra {ws}')\n"
     assert "External rule." in (ws / "AGENTS.md").read_text()
@@ -44,7 +44,7 @@ def test_add_from_local_path(ws, tmp_path, home):
 def test_add_from_git_url(ws, tmp_path, home):
     repo = _git_repo(_make_plugin(tmp_path / "repos", "gitplug"))
     url = f"file://{repo}"
-    code, out, err = run_cli(["add", url], cwd=ws)
+    code, out, err = run_cli(["--yes", "add", url], cwd=ws)
     assert code == 0, err
     assert (ws / "gitplug" / "tool.py").exists()
     assert (home / ".rharness" / "plugins" / "gitplug" / "agents.md").exists()
@@ -61,7 +61,7 @@ def test_add_github_shorthand_with_subdir(ws, tmp_path, home):
     (repo / "README.md").write_text("many plugins\n")
     _git_repo(repo)
     env = {"RHARNESS_GITHUB_BASE": f"file://{base}/"}
-    code, out, err = run_cli(["add", "alice/research-plugins/plugins/sub"], cwd=ws, env=env)
+    code, out, err = run_cli(["--yes", "add", "alice/research-plugins/plugins/sub"], cwd=ws, env=env)
     assert code == 0, err
     assert (ws / "sub" / "tool.py").exists()
     m = json.loads((ws / ".rharness" / "manifest.json").read_text())
@@ -71,8 +71,58 @@ def test_add_github_shorthand_with_subdir(ws, tmp_path, home):
 def test_add_missing_plugin_json_is_error(ws, tmp_path):
     d = tmp_path / "notaplugin"; d.mkdir()
     (d / "agents.md").write_text("x")
-    code, out, err = run_cli(["add", str(d)], cwd=ws)
+    code, out, err = run_cli(["--yes", "add", str(d)], cwd=ws)
     assert code == 2 and "plugin.json" in err
+
+
+def test_external_add_without_yes_shows_capabilities_and_refuses(ws, tmp_path, home):
+    src = _make_plugin(tmp_path / "ext", "extra")
+    (src / "setup.sh").write_text("#!/bin/sh\necho hi\n")
+    (src / "claude").mkdir()
+    (src / "claude" / "hooks.json").write_text(json.dumps(
+        {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo spy"}]}]}))
+    code, out, err = run_cli(["add", str(src)], cwd=ws)
+    assert code == 1
+    assert "Plugin extra from" in out
+    assert "setup.sh: yes" in out and "hook PreToolUse: runs `echo spy`" in out
+    assert "AGENTS.md section: yes" in out and "--yes" in out
+    assert not (ws / "extra").exists()
+    m = json.loads((ws / ".rharness" / "manifest.json").read_text())
+    assert m["plugins"] == [] and not (ws / ".claude" / "settings.json").exists() or "spy" not in (ws / ".claude" / "settings.json").read_text()
+
+
+def test_builtin_add_needs_no_confirmation(ws):
+    code, out, err = run_cli(["add", "ideas"], cwd=ws)
+    assert code == 0, err and "Plugin ideas from" not in out
+
+
+def test_add_pinned_to_tag_and_commit(ws, tmp_path, home):
+    repo = _make_plugin(tmp_path / "repos", "pinned", rule="Version one.")
+    _git_repo(repo)
+    subprocess.run(["git", "tag", "v1"], cwd=repo, check=True)
+    v1 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+    (repo / "agents.md").write_text("## pinned\n\n- Version two.\n")
+    subprocess.run(["git", "commit", "-q", "-am", "v2"], cwd=repo, check=True)
+    url = f"file://{repo}"
+    code, out, err = run_cli(["--yes", "add", f"{url}@v1"], cwd=ws)
+    assert code == 0, err
+    assert "Version one." in (ws / "AGENTS.md").read_text()
+    assert f"commit {v1[:12]}" in out
+    m = json.loads((ws / ".rharness" / "manifest.json").read_text())
+    assert m["plugin_sources"]["pinned"] == f"{url}@v1"
+    code, out, err = run_cli(["list"], cwd=ws)
+    assert f"@{v1[:12]}" in out
+    code, out, err = run_cli(["--yes", "add", f"{url}@{v1}", "--refresh"], cwd=ws)
+    assert code == 0, err and "Version one." in (ws / "AGENTS.md").read_text()
+    code, out, err = run_cli(["--yes", "add", f"{url}@main", "--refresh"], cwd=ws)
+    assert code == 0, err
+    assert "Version two." in (ws / "AGENTS.md").read_text()
+
+
+def test_add_pinned_to_missing_ref_fails(ws, tmp_path, home):
+    repo = _git_repo(_make_plugin(tmp_path / "repos", "p2"))
+    code, out, err = run_cli(["--yes", "add", f"file://{repo}@nope"], cwd=ws)
+    assert code == 2 and "@nope" in err
 
 
 def test_add_unknown_name_mentions_sources(ws):
@@ -83,7 +133,7 @@ def test_add_unknown_name_mentions_sources(ws):
 def test_external_plugin_applies_to_projects_and_update_reapplies(ws, tmp_path, home):
     src = _make_plugin(tmp_path / "ext", "extra")
     run_cli(["new", "seam"], cwd=ws)
-    code, out, err = run_cli(["add", str(src)], cwd=ws)
+    code, out, err = run_cli(["--yes", "add", str(src)], cwd=ws)
     assert code == 0, err
     helper = ws / "seam" / "tools" / "extra_helper.py"
     assert helper.read_text() == "# extra for seam\n"
@@ -96,19 +146,19 @@ def test_external_plugin_applies_to_projects_and_update_reapplies(ws, tmp_path, 
 
 def test_refresh_refetches_from_source(ws, tmp_path, home):
     src = _make_plugin(tmp_path / "ext", "extra", rule="Version one.")
-    run_cli(["add", str(src)], cwd=ws)
+    run_cli(["--yes", "add", str(src)], cwd=ws)
     (src / "agents.md").write_text("## extra\n\n- Version two.\n")
-    code, out, err = run_cli(["add", str(src)], cwd=ws)
+    code, out, err = run_cli(["--yes", "add", str(src)], cwd=ws)
     assert code == 0, err
     assert "Version one." in (ws / "AGENTS.md").read_text()      # cached copy reused
-    code, out, err = run_cli(["add", str(src), "--refresh"], cwd=ws)
+    code, out, err = run_cli(["--yes", "add", str(src), "--refresh"], cwd=ws)
     assert code == 0, err
     assert "Version two." in (ws / "AGENTS.md").read_text()
 
 
 def test_list_shows_origin_and_source(ws, tmp_path, home):
     src = _make_plugin(tmp_path / "ext", "extra")
-    run_cli(["add", str(src)], cwd=ws)
+    run_cli(["--yes", "add", str(src)], cwd=ws)
     code, out, err = run_cli(["list"], cwd=ws)
     assert code == 0, err
     lines = {l.split()[0]: l for l in out.splitlines() if l.strip()}
@@ -126,7 +176,7 @@ def test_plugin_new_scaffolds_installable_plugin(ws, tmp_path, home):
     meta = json.loads((d / "plugin.json").read_text())
     assert meta["name"] == "mytools" and set(meta["harness"]) == {"claude", "codex"}
     assert "rharness add" in (d / "README.md").read_text()
-    code, out, err = run_cli(["add", str(d)], cwd=ws)
+    code, out, err = run_cli(["--yes", "add", str(d)], cwd=ws)
     assert code == 0, err
     assert (ws / "mytools" / "README.md").exists()
     assert (ws / ".claude" / "skills" / "mytools" / "SKILL.md").exists()
@@ -142,7 +192,7 @@ def test_plugin_new_rejects_bad_name_and_existing_dir(ws, tmp_path):
 
 def test_remove_external_plugin_keeps_cached_copy(ws, tmp_path, home):
     src = _make_plugin(tmp_path / "ext", "extra")
-    run_cli(["add", str(src)], cwd=ws)
+    run_cli(["--yes", "add", str(src)], cwd=ws)
     code, out, err = run_cli(["remove", "extra"], cwd=ws)
     assert code == 0, err
     assert not (ws / "extra").exists()

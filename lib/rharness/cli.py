@@ -53,6 +53,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("add", help="install a plugin: built-in name, local path, git URL, or owner/repo[/subdir]")
     s.add_argument("name", metavar="plugin")
     s.add_argument("--refresh", action="store_true", help="re-fetch an external plugin before installing")
+    s.epilog = ("External sources (path, git URL, owner/repo[/subdir]) print what the plugin would do and ask for "
+                "confirmation; pass --yes (global flag, before the subcommand) to accept. Pin with @ref: "
+                "owner/repo@v1.2 or url@<commit>.")
     s = sub.add_parser("remove", help="uninstall a plugin")
     s.add_argument("name")
     sub.add_parser("list", help="list plugins: built-in, fetched, and installed here")
@@ -98,9 +101,10 @@ def run_update(args):
             fetch_release(version, home, None)
             relink(home, version)
             print(f"fetched {version} into {home / 'store' / version}")
-        except Exception as e:  # network, tar, or filesystem errors
+        except Exception as e:  # network, checksum, tar, or filesystem errors
             err(f"fetch failed: {e}")
             return 2
+        print(f"verified against SHA256SUMS")
     ws = Workspace.open(override=args.workspace)
     replaced, kept = apply_managed(ws, force=args.force, dry_run=args.dry_run)
     ws.manifest.version = __version__
@@ -306,7 +310,7 @@ def run_adopt(args):
 
 def run_add(args):
     ws = Workspace.open(override=args.workspace)
-    return install_plugin(ws, args.name, dry_run=args.dry_run, refresh=args.refresh)
+    return install_plugin(ws, args.name, dry_run=args.dry_run, refresh=args.refresh, yes=args.yes)
 
 
 def run_plugin(args):
@@ -342,9 +346,14 @@ def run_list(args):
     installed = set(ws.manifest.plugins)
     sources = ws.manifest.plugin_sources
     rows = []
+    from .plugin import fetched_commit
     for name, plugin in available_plugins().items():
+        src = sources.get(name, "")
+        commit = fetched_commit(plugin.dir)
+        if src and commit:
+            src += f" @{commit[:12]}"
         rows.append((name, plugin.origin, "installed" if name in installed else "available",
-                     sources.get(name, ""), plugin.meta.get("description", "")))
+                     src, plugin.meta.get("description", "")))
     for name in sorted(installed - set(available_plugins())):
         rows.append((name, "missing", "installed", sources.get(name, ""), "directory not found; re-add it"))
     for name, origin, status, source, desc in rows:

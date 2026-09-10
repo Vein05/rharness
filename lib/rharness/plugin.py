@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -36,15 +37,28 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 GITHUB_RE = re.compile(r"^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)(?:/(.+))?$")
 
 
+def split_ref(spec: str):
+    """'owner/repo/sub@v1' -> ('owner/repo/sub', 'v1'); a git@host: prefix is not a ref."""
+    tail = spec.rsplit("/", 1)[-1]
+    if "@" in tail and not spec.startswith("git@"):
+        base, ref = spec.rsplit("@", 1)
+        return base, ref
+    if spec.startswith("git@") and spec.count("@") > 1:
+        base, ref = spec.rsplit("@", 1)
+        return base, ref
+    return spec, None
+
+
 def classify_source(spec: str):
-    """Return (kind, payload): builtin | path | git | github."""
-    if spec.startswith(("./", "../", "/", "~")) or ("/" in spec and (Path(spec) / "plugin.json").exists()):
-        return "path", str(Path(spec).expanduser().resolve())
-    if spec.startswith(("http://", "https://", "git@", "ssh://", "file://")) or spec.endswith(".git"):
-        return "git", spec
-    m = GITHUB_RE.match(spec)
-    if m and "/" in spec:
-        return "github", (m.group(1), m.group(2), m.group(3))
+    """Return (kind, payload): builtin | path | git | github. payload carries the ref for git kinds."""
+    base, ref = split_ref(spec)
+    if base.startswith(("./", "../", "/", "~")) or ("/" in base and (Path(base) / "plugin.json").exists()):
+        return "path", str(Path(base).expanduser().resolve())
+    if base.startswith(("http://", "https://", "git@", "ssh://", "file://")) or base.endswith(".git"):
+        return "git", (base, ref)
+    m = GITHUB_RE.match(base)
+    if m and "/" in base:
+        return "github", (m.group(1), m.group(2), m.group(3), ref)
     return "builtin", spec
 
 
@@ -73,25 +87,88 @@ def fetch_plugin(spec: str, dest_root=None) -> Path:
         raise PluginNotFound(f"no plugin named {spec}; use a built-in name, a local path, "
                              f"a git URL, or owner/repo[/subdir] on GitHub")
     if kind == "github":
-        owner, repo, subdir = payload
+        owner, repo, subdir, ref = payload
         base = os.environ.get("RHARNESS_GITHUB_BASE", "https://github.com/")
         url = f"{base}{owner}/{repo}"
         if base.startswith("https://"):
             url += ".git"
     else:
-        url, subdir = payload, None
+        (url, ref), subdir = payload, None
     tmp = Path(tempfile.mkdtemp(prefix="rharness-plugin-"))
     try:
-        r = subprocess.run(["git", "clone", "--depth", "1", "-q", url, str(tmp / "repo")],
-                           capture_output=True, text=True)
+        repo_dir = tmp / "repo"
+        args = ["git", "clone", "-q", "--depth", "1"] + (["--branch", ref] if ref else []) + [url, str(repo_dir)]
+        r = subprocess.run(args, capture_output=True, text=True)
+        if r.returncode != 0 and ref:
+            # not a branch or tag: full clone, then check out the commit
+            r = subprocess.run(["git", "clone", "-q", url, str(repo_dir)], capture_output=True, text=True)
+            if r.returncode == 0:
+                r = subprocess.run(["git", "checkout", "-q", ref], cwd=str(repo_dir), capture_output=True, text=True)
         if r.returncode != 0:
-            raise PluginNotFound(f"git clone of {url} failed: {r.stderr.strip()}")
-        src = tmp / "repo" / subdir if subdir else tmp / "repo"
+            raise PluginNotFound(f"git clone of {url}" + (f"@{ref}" if ref else "") + f" failed: {r.stderr.strip()}")
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir),
+                                capture_output=True, text=True).stdout.strip()
+        src = repo_dir / subdir if subdir else repo_dir
         if not src.is_dir():
             raise PluginNotFound(f"{subdir} is not a directory in {url}")
-        return _copy_plugin_dir(src, dest_root)
+        dest = _copy_plugin_dir(src, dest_root)
+        (dest / ".rharness-source.json").write_text(json.dumps(
+            {"spec": spec, "commit": commit, "ref": ref, "fetched": today()}, indent=2) + "\n")
+        return dest
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def fetched_commit(plugin_dir: Path):
+    f = Path(plugin_dir) / ".rharness-source.json"
+    if not f.exists():
+        return None
+    try:
+        return json.loads(f.read_text()).get("commit")
+    except json.JSONDecodeError:
+        return None
+
+
+def capability_summary(plugin, ws) -> str:
+    """What installing this plugin would do on this machine."""
+    n_files = sum(1 for x in plugin.files_dir.rglob("*") if x.is_file()) if plugin.files_dir.exists() else 0
+    n_proj = sum(1 for x in plugin.project_files_dir.rglob("*") if x.is_file()) if plugin.project_files_dir.exists() else 0
+    snippet = plugin.agents_snippet()
+    lines = [f"Plugin {plugin.name} from {plugin.dir}"]
+    commit = fetched_commit(plugin.dir)
+    if commit:
+        lines[0] += f" (commit {commit[:12]})"
+    lines.append(f"  {n_files} file(s) into the workspace root; {n_proj} file(s) into every project")
+    lines.append(f"  AGENTS.md section: {'yes, ' + str(len(snippet.splitlines())) + ' lines' if snippet else 'no'}"
+                 " (the agent will follow it)")
+    claude = ws.wants("claude") and "claude" in plugin.harness
+    n_skills = sum(1 for x in plugin.skills_dir.rglob("SKILL.md")) if plugin.skills_dir.exists() else 0
+    lines.append(f"  Claude Code skills: {n_skills if claude else 'none (not applied to this workspace)'}")
+    if claude and plugin.hooks_path.exists():
+        try:
+            hooks = json.loads(plugin.hooks_path.read_text())
+        except json.JSONDecodeError:
+            hooks = {}
+        for event, entries in hooks.items():
+            for entry in entries:
+                for h in entry.get("hooks", []):
+                    lines.append(f"  hook {event}: runs `{h.get('command', '')}`")
+    else:
+        lines.append("  hooks: none")
+    lines.append(f"  setup.sh: {'yes, a shell script will run on this machine' if plugin.setup_path.exists() else 'no'}")
+    req = plugin.meta.get("requires", {})
+    if req.get("env") or req.get("binaries"):
+        lines.append(f"  requires: env {', '.join(req.get('env', [])) or '-'}; binaries {', '.join(req.get('binaries', [])) or '-'}")
+    return "\n".join(lines)
+
+
+def confirm(prompt: str) -> bool:
+    if not sys.stdin.isatty():
+        return False
+    try:
+        return input(prompt + " [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
 
 
 class Plugin:
@@ -247,7 +324,7 @@ def install_base_hooks(ws):
 
 
 # ----- install / uninstall -----
-def install_plugin(ws, spec, dry_run=False, base=None, refresh=False):
+def install_plugin(ws, spec, dry_run=False, base=None, refresh=False, yes=False):
     kind, _ = classify_source(spec)
     if kind == "builtin":
         plugin = Plugin.load(spec, base)
@@ -264,6 +341,11 @@ def install_plugin(ws, spec, dry_run=False, base=None, refresh=False):
         if plugin is None:
             fetched = fetch_plugin(spec)
             plugin = Plugin(fetched.name, fetched)
+        if not dry_run:
+            print(capability_summary(plugin, ws))
+            if not yes and not confirm("Install this plugin?"):
+                print("Not installed. Re-run with --yes to accept, or inspect the directory above first.")
+                return 1
     name = plugin.name
     owner = f"plugin:{name}"
     ctx = {"workspace": str(ws.root), "date": today()}

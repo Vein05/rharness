@@ -1,5 +1,5 @@
 __pycache__/
-*.pyc
-.pytest_cache/
 .DS_Store
+.pytest_cache/
+*.pyc
 dist/

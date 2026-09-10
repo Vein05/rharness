@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import tarfile
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -27,17 +28,62 @@ def resolve_version(env=None) -> str:
 
 def release_url(version, env=None) -> str:
     env = env or os.environ
-    tpl = env.get("RHARNESS_RELEASE_URL") or f"https://github.com/{REPO}/archive/refs/tags/{{version}}.tar.gz"
-    return tpl.format(version=version)
+    plain = version[1:] if version.startswith("v") else version
+    tpl = (env.get("RHARNESS_RELEASE_URL")
+           or f"https://github.com/{REPO}/releases/download/{{version}}/rharness-{{plain}}.tar.gz")
+    return tpl.format(version=version, plain=plain)
+
+
+def sums_url(version, env=None) -> str:
+    env = env or os.environ
+    plain = version[1:] if version.startswith("v") else version
+    tpl = env.get("RHARNESS_SUMS_URL") or f"https://github.com/{REPO}/releases/download/{{version}}/SHA256SUMS"
+    return tpl.format(version=version, plain=plain)
+
+
+class ChecksumError(Exception):
+    pass
+
+
+def _download(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=60) as r:
+        return r.read()
+
+
+def verify_tarball(data: bytes, asset_name: str, sums_text: str):
+    """Raise ChecksumError unless SHA256SUMS lists asset_name with the digest of data."""
+    import hashlib
+    expected = None
+    for line in sums_text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[-1].lstrip("*") == asset_name:
+            expected = parts[0]
+    actual = hashlib.sha256(data).hexdigest()
+    if expected is None:
+        raise ChecksumError(f"{asset_name} is not listed in SHA256SUMS")
+    if expected != actual:
+        raise ChecksumError(f"checksum mismatch for {asset_name}: expected {expected}, got {actual}")
+    return actual
 
 
 def fetch_release(version, home: Path, env=None) -> Path:
+    env = env or os.environ
     url = release_url(version, env)
     dest = home / "store" / version
     if dest.exists():
         return dest
-    with urllib.request.urlopen(url, timeout=60) as r:
-        data = r.read()
+    data = _download(url)
+    asset_name = url.rsplit("/", 1)[-1]
+    try:
+        sums = _download(sums_url(version, env)).decode("utf-8", "replace")
+    except (urllib.error.URLError, OSError):
+        sums = None
+    if sums is None:
+        if env.get("RHARNESS_INSECURE") != "1":
+            raise ChecksumError(f"no SHA256SUMS available for {version}; refusing unverified download "
+                                f"(set RHARNESS_INSECURE=1 to override)")
+    else:
+        verify_tarball(data, asset_name, sums)
     tmp = home / "store" / f".tmp-{version}"
     if tmp.exists():
         shutil.rmtree(tmp)
