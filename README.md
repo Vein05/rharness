@@ -163,7 +163,7 @@ session on.
 |---|---|---|---|:---:|
 | [rtk](plugins/rtk/) | Workspace | Token-saving command proxy for Claude Code, registered as a hook; [official project](https://github.com/rtk-ai/rtk) | `rtk`, `jq` (installed by `setup.sh` if missing) | Yes |
 | [figures](plugins/figures/) | Workspace | SVG-first figure pipeline: style guide, geometry checker, icon fetcher, matplotlib style | `rsvg-convert`, `pdffonts`, Pillow | No |
-| [review-panel](plugins/review-panel/) | Workspace | Simulated LLM reviewer panel with reviewer tiers, a holdout canary, and a hard spend ceiling | `OPENROUTER_API_KEY`, `pdftotext`, `pip install openai pyyaml` | No |
+| [review-panel](plugins/review-panel/) | Workspace | Runs your paper through panels of LLM reviewers at multiple model tiers, with a holdout canary and hard spend ceiling | `OPENROUTER_API_KEY`, `pdftotext`, `pip install openai pyyaml` | No |
 | [wandb](plugins/wandb/) | Workspace + projects | Weights & Biases tracking rules and a run initialiser in every project | `WANDB_API_KEY`, `pip install wandb` | No |
 | [ideas](plugins/ideas/) | Workspace | Ranked ideas backlog with novelty-scan dates and a dead-cells list | nothing | No |
 
