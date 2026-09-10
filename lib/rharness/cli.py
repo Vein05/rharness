@@ -63,7 +63,22 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("lint", help="check projects against the rules")
     s.add_argument("dir", nargs="?")
     s.add_argument("--json", action="store_true", help="one JSON object per finding")
+
+    sub.add_parser("doctor", help="check the machine and workspace")
     return p
+
+
+def run_doctor(args):
+    from .doctor import doctor_checks
+    try:
+        ws = Workspace.open(override=args.workspace)
+    except NotAWorkspace:
+        ws = None
+    failed = False
+    for name, ok, detail in doctor_checks(ws):
+        print(f"{'ok  ' if ok else 'FAIL'} {name}: {detail}")
+        failed |= not ok
+    return 1 if failed else 0
 
 
 def run_lint(args):
