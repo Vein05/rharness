@@ -10,7 +10,7 @@ ANY = re.compile(r"\{\{[^{}]*\}\}")
 
 REQUIRED_PROJECT_FILES = [
     "CHARTER.md", "AGENTS.md", "CLAUDE.md", "README.md", ".gitignore", ".gitattributes", "requirements.txt",
-    "spec/README.md", "spec/scoring.md", "research/README.md",
+    "spec/README.md", "spec/scoring.md", "research/README.md", "research/PROVENANCE.md",
     "paper/writing.md", "paper/Makefile", "paper/main.tex", "paper/references.bib",
     "data/README.md", "papers/INDEX.md", "handoff/README.md", "changelog/README.md",
     "tests/.gitkeep", "tools/.gitkeep",

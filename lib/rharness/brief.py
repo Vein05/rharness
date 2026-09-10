@@ -96,9 +96,14 @@ def project_brief(pdir: Path, cfg: dict, lines: int = 80) -> str:
     if docs:
         out += ["## Authoritative docs (trust these; dated records are historical)"]
         out += [f"- {d}" for d in docs] + [""]
+    from .provenance import LEDGER_REL, parse_ledger
+    ledger = pdir / LEDGER_REL
+    n = len(parse_ledger(_read(ledger))) if ledger.exists() else 0
+    out += [f"## Provenance: {n} recorded artifact" + ("" if n == 1 else "s") +
+            f" in {LEDGER_REL.as_posix()}; record frozen traces with `rharness hash`", ""]
     findings = lint_project(pdir, cfg, writing_template_region())
     errors = sum(1 for f in findings if f.severity == "error")
-    out += [f"## Lint: {errors} errors, {len(findings) - errors} warnings"]
+    out += [f"## Lint: {errors} errors, {len(findings) - errors} warnings (structure and contract fields; not the science)"]
     if findings:
         out += [format_findings(findings).rsplit("\n", 1)[0]]
     out += ["", "Rules: this project's AGENTS.md (Session protocol, Workspace rules), then CHARTER.md."]

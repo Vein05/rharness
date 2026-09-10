@@ -78,6 +78,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("session-check", help="Stop-hook check: today's work needs today's handoff and changelog")
 
+    s = sub.add_parser("hash", help="record frozen artifacts in research/PROVENANCE.md")
+    s.add_argument("paths", nargs="+", help="files relative to cwd or absolute; must be inside a project")
+    s.add_argument("--note", default="", help="what the artifact backs (table, figure, claim)")
+
     s = sub.add_parser("update", help="fetch the latest release and re-apply managed files")
     s.add_argument("--no-fetch", action="store_true", help="only re-apply managed files")
     s.add_argument("--force", action="store_true", help="overwrite modified files (backed up first)")
@@ -124,6 +128,32 @@ def run_brief(args):
     else:
         pdir = find_project(ws, Path.cwd())
     print(project_brief(pdir, cfg, lines=args.lines) if pdir else workspace_brief(ws, cfg))
+    return 0
+
+
+def run_hash(args):
+    from .brief import find_project
+    from .provenance import record
+    ws = Workspace.open(override=args.workspace)
+    pdir = find_project(ws, Path.cwd())
+    if pdir is None:
+        first = Path(args.paths[0]).resolve()
+        pdir = find_project(ws, first.parent)
+    if pdir is None:
+        err("hash must run inside a project (or on files inside one)")
+        return 2
+    for p in args.paths:
+        if not Path(p).exists():
+            err(f"{p} does not exist")
+            return 2
+    try:
+        rows = record(pdir, args.paths, note=args.note)
+    except ValueError:
+        err("every path must be inside the same project")
+        return 2
+    for r in rows:
+        print(f"{r['path']}  {r['sha16']}  {r['bytes']} bytes  commit {r['commit']}")
+    print(f"Recorded {len(rows)} artifact(s) in {pdir.name}/research/PROVENANCE.md")
     return 0
 
 

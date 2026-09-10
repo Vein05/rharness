@@ -42,7 +42,7 @@ def test_add_twice_is_idempotent(ws):
 
 
 def test_add_preserves_existing_settings_keys(ws):
-    (ws / ".claude").mkdir()
+    (ws / ".claude").mkdir(exist_ok=True)
     (ws / ".claude" / "settings.json").write_text(json.dumps(
         {"model": "opus", "hooks": {"PreToolUse": [{"matcher": "Write", "hooks": []}]}}))
     code, out, err = run_cli(["add", "demo"], cwd=ws, env=ENV)

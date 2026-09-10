@@ -15,7 +15,10 @@ def _clean_project(ws, slug="p"):
     run_cli(["new", slug], cwd=ws)
     p = ws / slug
     ch = (p / "CHARTER.md").read_text().replace(
-        "**Status:** NOT TRIGGERED", "**Status:** NOT TRIGGERED (threshold: AUC < 0.55)")
+        "<!-- The negative result that means stop spending. State a threshold. -->",
+        "Stop if the pilot AUC is below 0.55 on the held-out split.").replace(
+        "<!-- One sentence. The thing the paper answers. -->",
+        "Does the intervention close the gap on the hard split?")
     (p / "CHARTER.md").write_text(ch)
     _commit_all(p)
     today = dt.date.today().isoformat()
@@ -182,3 +185,39 @@ def test_workspace_manifest_missing_file_is_error(ws):
     _, msgs, f = _run(ws)
     hit = [x for x in f if "lint.toml" in x["message"] and "manifest" in x["message"]]
     assert hit and hit[0]["severity"] == "error"
+
+
+def test_kill_criterion_without_threshold_is_error(ws):
+    run_cli(["new", "k"], cwd=ws)
+    _, msgs, f = _run(ws)
+    hit = [x for x in f if "states no threshold" in x["message"]]
+    assert hit and hit[0]["severity"] == "error"
+
+
+def test_scoring_without_control_and_ceiling_rows(ws):
+    p = _clean_project(ws)
+    (p / "spec" / "scoring.md").write_text("# Scoring\n\nStatus: frozen, 2026-09-10.\n\n| condition | m |\n|---|---|\n| method | |\n")
+    _commit_all(p)
+    _, msgs, _ = _run(ws)
+    assert any("no `control` row" in m for m in msgs) and any("no `ceiling` row" in m for m in msgs)
+
+
+def test_reports_before_frozen_scoring_warns(ws):
+    p = _clean_project(ws)
+    (p / "research" / "PILOT_2026-09-10.md").write_text("# Pilot\n\nArchetype: B, experiment report.\n")
+    _commit_all(p)
+    _, msgs, _ = _run(ws)
+    assert any("still proposed" in m for m in msgs)
+
+
+def test_code_without_component_spec_warns(ws):
+    p = _clean_project(ws)
+    (p / "seam").mkdir(); (p / "seam" / "scorer.py").write_text("x = 1\n")
+    (p / "tests" / "test_x.py").write_text("def test(): pass\n")
+    _commit_all(p)
+    _, msgs, _ = _run(ws)
+    assert any("code without a spec is a probe" in m for m in msgs)
+    (p / "spec" / "scorer.md").write_text("# Scorer\n\nStatus: frozen, 2026-09-10.\n")
+    _commit_all(p)
+    _, msgs, _ = _run(ws)
+    assert not any("code without a spec" in m for m in msgs)

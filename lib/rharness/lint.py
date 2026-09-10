@@ -8,8 +8,11 @@ from pathlib import Path
 from . import gitutil
 from .paths import BASE_DIR
 from .regions import get_region
+from . import provenance
 
-REQUIRED_FILES = ["CHARTER.md", "AGENTS.md", "README.md", "spec/README.md", "paper/writing.md"]
+REQUIRED_FILES = ["CHARTER.md", "AGENTS.md", "README.md", "spec/README.md", "paper/writing.md",
+                  "research/PROVENANCE.md"]
+CODE_EXCLUDE = {"tests", "tools", ".venv", "venv", "node_modules", "build", "dist", ".git", ".rharness"}
 REQUIRED_DIRS = ["handoff", "changelog"]
 LFS_RULES = ["data/*.jsonl", "papers/*.pdf", "traces/**"]
 DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
@@ -77,6 +80,14 @@ def lint_project(pdir: Path, cfg: dict, template_region=None):
         sec = re.search(r"^## Kill Criterion\s*$(.*?)(?=^## |\Z)", t, re.M | re.S)
         if not sec or "Status:" not in sec.group(1):
             E("CHARTER.md", "CHARTER.md needs a `## Kill Criterion` section with a `Status:` line")
+        else:
+            body = re.sub(r"<!--.*?-->", "", sec.group(1), flags=re.S)
+            body = re.sub(r"\*\*Status:\*\*.*", "", body).strip()
+            if not body:
+                E("CHARTER.md", "kill criterion states no threshold; the section has only a Status line")
+        core = re.search(r"^## Core Question\s*$(.*?)(?=^## |\Z)", t, re.M | re.S)
+        if core and not re.sub(r"<!--.*?-->", "", core.group(1), flags=re.S).strip():
+            W("CHARTER.md", "core question is empty")
 
     spec = pdir / "spec"
     if spec.is_dir():
@@ -84,6 +95,21 @@ def lint_project(pdir: Path, cfg: dict, template_region=None):
             if not STATUS_RE.search(_read(f)):
                 E(f"spec/{f.name}",
                   f"spec/{f.name} must open with `Status: proposed|frozen|superseded, YYYY-MM-DD`")
+        scoring = spec / "scoring.md"
+        if scoring.exists():
+            st = _read(scoring)
+            for row in ("control", "ceiling"):
+                if not re.search(r"^\|\s*" + row, st, re.M | re.I):
+                    E("spec/scoring.md", f"spec/scoring.md has no `{row}` row in the headline table")
+            reports = [f for f in (pdir / "research").glob("*.md")
+                       if (pdir / "research").is_dir() and re.search(r"^Archetype: B\b", _read(f), re.M)]
+            if reports and re.search(r"^Status: proposed", st, re.M):
+                W("spec/scoring.md", f"{len(reports)} experiment report(s) exist but spec/scoring.md is still proposed; freeze it")
+        code_files = [f for f in pdir.rglob("*.py")
+                      if not (set(f.relative_to(pdir).parts[:-1]) & CODE_EXCLUDE)]
+        component_specs = [f for f in spec.glob("*.md") if f.name not in ("README.md", "scoring.md")]
+        if code_files and not component_specs:
+            W("spec/", f"{len(code_files)} source file(s) but no component spec in spec/ besides scoring.md; code without a spec is a probe")
 
     if not gitutil.is_repo(pdir):
         E("", "not a git repository")
@@ -121,6 +147,9 @@ def lint_project(pdir: Path, cfg: dict, template_region=None):
             m = RELATIVE_DATE_RE.search(_read(f))
             if m:
                 W(f.relative_to(pdir).as_posix(), f"relative date phrase \"{m.group(0)}\" (use YYYY-MM-DD)")
+
+    for sev, path, msg in provenance.check(pdir):
+        (E if sev == "error" else W)(path, msg)
 
     w = pdir / "paper" / "writing.md"
     if w.exists() and template_region is not None:
