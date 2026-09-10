@@ -245,3 +245,12 @@ objects with the same fields.
 - Plugin sources outside this repo (`add github:user/repo`).
 - A `rharness paper` command wrapping the LaTeX build.
 - Cursor and Gemini adapters.
+
+## Revision notes
+
+- 2026-09-09: `bin/rharness` is a thin entrypoint; logic lives in
+  `lib/rharness/` modules (still Python stdlib only, shipped in the same
+  tarball). Reason: testability and file size. Layout in section 2 updated
+  by this note.
+- 2026-09-09: `lint.toml` is a flat `key = value` file parsed by a minimal
+  reader so Python 3.9 (no `tomllib`) stays supported.
