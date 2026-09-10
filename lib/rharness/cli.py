@@ -319,7 +319,7 @@ def scaffold_project(ws, dest: Path, slug: str, title: str, dry_run: bool):
         if pm.entry(rel) is None:
             pm.record(rel, "user", region=rel == "paper/writing.md")
     if not gitutil.is_repo(dest):
-        gitutil.git(["init", "-q"], dest)
+        gitutil.init_repo(dest)
     if gitutil.has_lfs():
         gitutil.git(["lfs", "install", "--local"], dest)
     else:

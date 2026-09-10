@@ -7,7 +7,8 @@ from rharness import gitutil
 
 def _commit_all(p, msg="c"):
     gitutil.git(["add", "-A"], p)
-    gitutil.git(["commit", "-q", "-m", msg], p)
+    r = gitutil.git(["commit", "-q", "-m", msg], p)
+    assert r.returncode == 0, r.stderr
 
 
 def _clean_project(ws, slug="p"):

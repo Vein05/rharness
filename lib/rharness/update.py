@@ -50,7 +50,10 @@ def fetch_release(version, home: Path, env=None) -> Path:
             m.name = parts[1]
             if m.name.startswith("..") or m.name.startswith("/") or "/../" in m.name:
                 continue
-            tf.extract(m, tmp)
+            if hasattr(tarfile, "data_filter"):
+                tf.extract(m, tmp, filter="data")
+            else:
+                tf.extract(m, tmp)
     tmp.rename(dest)
     return dest
 

@@ -9,6 +9,14 @@ def git(args, cwd):
     return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True)
 
 
+def init_repo(path):
+    """git init with an initial branch of main; falls back for git < 2.28."""
+    r = git(["init", "-q", "-b", "main"], path)
+    if r.returncode != 0:
+        r = git(["init", "-q"], path)
+    return r
+
+
 def is_repo(path) -> bool:
     return (Path(path) / ".git").exists()
 

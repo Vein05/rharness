@@ -22,6 +22,15 @@ def run_cli(argv, cwd, env=None):
     return p.returncode, p.stdout, p.stderr
 
 
+@pytest.fixture(autouse=True)
+def git_identity(monkeypatch):
+    """CI runners have no global git identity; direct gitutil calls need one too."""
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "rharness-test")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "test@example.invalid")
+
+
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     h = tmp_path / "home"
