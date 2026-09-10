@@ -9,7 +9,9 @@ from .paths import BASE_DIR
 from .templates import copy_tree
 from .plugin import (PluginNotFound, apply_all_project_files, install_plugin,
                      list_available, uninstall_plugin)
-from .workspace import MANIFEST_REL, PROJECT_MANIFEST_REL, NotAWorkspace, Workspace
+from .regions import get_region, upsert_region
+from .workspace import (MANIFEST_REL, PROJECT_MANIFEST_REL, NotAWorkspace, Workspace,
+                        detect_projects, find_root)
 
 HARNESSES = ("claude", "codex")
 DEFAULT_PLUGINS = ("rtk",)
@@ -53,7 +55,105 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("remove", help="uninstall a plugin")
     s.add_argument("name")
     sub.add_parser("list", help="list plugins")
+
+    s = sub.add_parser("adopt", help="retrofit an existing workspace or project")
+    s.add_argument("dir", nargs="?", default=".")
+    s.add_argument("--projects", help="comma-separated subset of project dirs")
     return p
+
+
+def _table_has(agents_text, slug):
+    return f"| `{slug}/` |" in agents_text
+
+
+def _add_adopted_row(agents_path: Path, slug: str):
+    agents = agents_path.read_text() if agents_path.exists() else ""
+    if _table_has(agents, slug):
+        return False
+    row_text = append_project_row(agents, slug, slug)
+    agents_path.write_text(row_text.replace(f"| scaffolded {today()} |", f"| adopted {today()} |"))
+    return True
+
+
+def adopt_workspace(root: Path, only, dry_run):
+    src = BASE_DIR / "workspace"
+    mpath = root / MANIFEST_REL
+    m = Manifest.load(mpath) if mpath.exists() else Manifest.new(mpath, __version__)
+    ctx = {"workspace": str(root), "date": today()}
+    if dry_run:
+        for p in sorted(x for x in src.rglob("*") if x.is_file()):
+            rel = p.relative_to(src).as_posix()
+            print(f"{'would keep' if (root / rel).exists() else 'would add'} {root / rel}")
+    else:
+        written, skipped = copy_tree(src, root, ctx)
+        for rel in written:
+            m.record(rel, "base", source=f"base/workspace/{rel}", region=rel in ("AGENTS.md", "CLAUDE.md"))
+            print(f"  added {rel}")
+        for rel in skipped:
+            if m.entry(rel) is None:
+                m.record(rel, "user", source=f"base/workspace/{rel}", region=rel in ("AGENTS.md", "CLAUDE.md"))
+            print(f"  kept  {rel}")
+        base_region = get_region((src / "AGENTS.md").read_text(), "base")
+        agents = (root / "AGENTS.md").read_text()
+        (root / "AGENTS.md").write_text(upsert_region(agents, "base", base_region))
+    ws = Workspace(root, m)
+    ensure_archetypes(ws, dry_run)
+    projects = [p for p in detect_projects(root) if not only or p.name in only]
+    for pdir in projects:
+        slug = pdir.name
+        print(f"Project {slug}:")
+        scaffold_project(ws, pdir, slug, slug, dry_run)
+        if dry_run:
+            continue
+        apply_all_project_files(ws, pdir)
+        if slug not in m.projects:
+            m.projects.append(slug)
+        _add_adopted_row(root / "AGENTS.md", slug)
+    if dry_run:
+        return 0
+    m.record("AGENTS.md", m.entry("AGENTS.md")["owner"], source="base/workspace/AGENTS.md", region=True)
+    m.save()
+    print(f"Adopted workspace at {root} ({len(projects)} projects)")
+    return 0
+
+
+def adopt_project(pdir: Path, dry_run):
+    root = find_root(pdir.parent)
+    if root:
+        ws = Workspace.open(override=root)
+    else:
+        ws = Workspace(pdir.parent, Manifest.new(pdir.parent / MANIFEST_REL, __version__))  # never saved
+    slug = pdir.name
+    scaffold_project(ws, pdir, slug, slug, dry_run)
+    if dry_run:
+        return 0
+    if root:
+        apply_all_project_files(ws, pdir)
+        if slug not in ws.manifest.projects:
+            ws.manifest.projects.append(slug)
+        if _add_adopted_row(ws.agents_path, slug):
+            prev = ws.manifest.entry("AGENTS.md") or {}
+            ws.manifest.record("AGENTS.md", prev.get("owner", "base"),
+                               source="base/workspace/AGENTS.md", region=True)
+        ws.manifest.save()
+    print(f"Adopted project {slug}")
+    return 0
+
+
+def run_adopt(args):
+    target = Path(args.dir).resolve()
+    if not target.is_dir():
+        err(f"{target} is not a directory")
+        return 2
+    only = [s.strip() for s in args.projects.split(",")] if args.projects else None
+    subprojects = detect_projects(target)
+    looks_like_project = (target / "CHARTER.md").exists() or (target / "AGENTS.md").exists()
+    if (target / MANIFEST_REL).exists() or (subprojects and not (target / "CHARTER.md").exists()):
+        return adopt_workspace(target, only, args.dry_run)
+    if looks_like_project:
+        return adopt_project(target, args.dry_run)
+    err(f"nothing to adopt at {target}: no CHARTER.md/AGENTS.md here and no project subdirectories")
+    return 1
 
 
 def run_add(args):
