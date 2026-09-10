@@ -20,7 +20,8 @@ not an app: the agent reads the files, you edit them, git tracks them.
 
 ## The opinions
 
-These are not defaults you configure. They are the product.
+These are not defaults you configure. They are the product. Also at
+[vein05.github.io/rharness](https://vein05.github.io/rharness/#opinions).
 
 1. **A kill criterion before any spend.** Every project starts with
    `CHARTER.md`: the core question, the result that means the paper exists,
