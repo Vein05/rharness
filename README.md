@@ -1,13 +1,23 @@
-<p align="center"><img src="assets/cover.svg" alt="rharness" width="100%"></p>
-
 # rharness
 
-A one-command setup for ML and NLP researchers who work with coding agents
-(Claude Code, Codex). It writes the markdown contracts and scripts that keep
-an agent-driven research workspace disciplined: a charter with a kill
-criterion per paper, an agent orientation file, daily handoffs and
-changelogs, specs before code, dated experiment reports, and a lint that
-reports drift. It is markdown and scripts, not an app.
+<p align="center"><img src="assets/cover.svg" alt="rharness" width="80%"></p>
+<p align="center"><sub>Cover made with the rharness <code>figures</code> plugin: SVG source, geometry checker, unmodified brand marks.</sub></p>
+
+<p align="center">
+  <a href="https://github.com/Vein05/rharness/actions/workflows/ci.yml"><img src="https://github.com/Vein05/rharness/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+  <a href="https://github.com/Vein05/rharness/releases"><img src="https://img.shields.io/badge/release-v0.1.0-2563EB" alt="release"></a>
+  <img src="https://img.shields.io/badge/python-3.9%2B-2563EB" alt="python 3.9+">
+  <img src="https://img.shields.io/badge/deps-none-2563EB" alt="no dependencies">
+  <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%7C%20Codex-2563EB" alt="works with Claude Code and Codex">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2563EB" alt="MIT"></a>
+</p>
+
+A one-command setup for ML and NLP researchers who work with coding agents.
+It writes the markdown contracts and scripts that keep an agent-driven
+research workspace disciplined: a charter with a kill criterion per paper,
+an agent orientation file, daily handoffs and changelogs, specs before code,
+dated experiment reports, and a lint that reports drift. It is markdown and
+scripts, not an app.
 
 ## Install
 
@@ -90,9 +100,10 @@ markers; everything outside is yours.
 
 ## Cover art
 
-`assets/cover/build.py` generates `assets/cover.svg` from the inlined brand marks in
-`assets/cover/icons/`; `assets/cover-social.png` is the 1280x640 GitHub social preview.
-Brand marks belong to their owners and are used unmodified.
+`assets/cover/build.py` generates `assets/cover.svg` from the inlined brand
+marks in `assets/cover/icons/` and checks it with the `figures` plugin's
+`check_svg.py`; `assets/cover-social.png` is the 1280x640 GitHub social
+preview. Brand marks belong to their owners and are used unmodified.
 
 ## Development
 
