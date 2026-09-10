@@ -8,7 +8,7 @@ from .manifest import Manifest, today
 from .paths import BASE_DIR
 from .templates import copy_tree
 from .plugin import (PluginNotFound, apply_all_project_files, available_plugins,
-                     install_plugin, scaffold_plugin, uninstall_plugin)
+                     install_base_hooks, install_plugin, scaffold_plugin, uninstall_plugin)
 from .regions import get_region, upsert_region
 from .workspace import (MANIFEST_REL, PROJECT_MANIFEST_REL, NotAWorkspace, Workspace,
                         detect_projects, find_root)
@@ -76,6 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("project", nargs="?", help="project slug or path (default: the project containing cwd)")
     s.add_argument("--lines", type=int, default=80, help="cap on handoff lines shown (default 80)")
 
+    sub.add_parser("session-check", help="Stop-hook check: today's work needs today's handoff and changelog")
+
     s = sub.add_parser("update", help="fetch the latest release and re-apply managed files")
     s.add_argument("--no-fetch", action="store_true", help="only re-apply managed files")
     s.add_argument("--force", action="store_true", help="overwrite modified files (backed up first)")
@@ -122,6 +124,23 @@ def run_brief(args):
     else:
         pdir = find_project(ws, Path.cwd())
     print(project_brief(pdir, cfg, lines=args.lines) if pdir else workspace_brief(ws, cfg))
+    return 0
+
+
+def run_session_check(args):
+    import json as _json
+    from .brief import find_project
+    from .session import session_check
+    try:
+        ws = Workspace.open(override=args.workspace)
+    except NotAWorkspace:
+        return 0
+    pdir = find_project(ws, Path.cwd())
+    projects = [pdir] if pdir else ws.projects()
+    stdin_text = "" if sys.stdin.isatty() else sys.stdin.read()
+    decision = session_check(projects, stdin_text)
+    if decision:
+        print(_json.dumps(decision))
     return 0
 
 
@@ -194,6 +213,8 @@ def adopt_workspace(root: Path, only, dry_run):
         agents = (root / "AGENTS.md").read_text()
         (root / "AGENTS.md").write_text(upsert_region(agents, "base", base_region))
     ws = Workspace(root, m)
+    if not dry_run:
+        install_base_hooks(ws)
     ensure_archetypes(ws, dry_run)
     projects = [p for p in detect_projects(root) if not only or p.name in only]
     for pdir in projects:
@@ -449,6 +470,7 @@ def run_init(args) -> int:
     m = Manifest.new(root / MANIFEST_REL, __version__, harness=args.harness)
     for rel in written:
         m.record(rel, "base", source=f"base/workspace/{rel}", region=rel in ("AGENTS.md", "CLAUDE.md"))
+    install_base_hooks(Workspace(root, m))
     m.save()
     print(f"Created workspace at {root}")
     for rel in written:
@@ -475,7 +497,7 @@ def main(argv) -> int:
     if args.cmd == "version":
         print(__version__)
         return 0
-    handler = globals().get(f"run_{args.cmd}")
+    handler = globals().get(f"run_{args.cmd.replace('-', '_')}")
     if handler is None:
         err(f"unknown command {args.cmd}")
         return 2

@@ -1,0 +1,25 @@
+{
+  "SessionStart": [
+    {
+      "matcher": "startup|resume|clear|compact",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && { command -v rharness >/dev/null 2>&1 && rharness brief || \"$HOME/.rharness/bin/rharness\" brief; } 2>/dev/null || true",
+          "timeout": 30
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && { command -v rharness >/dev/null 2>&1 && rharness session-check || \"$HOME/.rharness/bin/rharness\" session-check; } 2>/dev/null || true",
+          "timeout": 20
+        }
+      ]
+    }
+  ]
+}

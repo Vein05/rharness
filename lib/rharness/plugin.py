@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from .manifest import Manifest, today
-from .paths import PLUGINS_DIR, rharness_home
+from .paths import BASE_DIR, PLUGINS_DIR, rharness_home
 from .regions import remove_region, upsert_region
 from .templates import copy_tree
 from .workspace import PROJECT_MANIFEST_REL
@@ -227,6 +227,23 @@ def apply_all_project_files(ws, project_dir: Path):
         except PluginNotFound:
             continue
     return out
+
+
+# ----- base hooks (Claude Code session hooks shipped with the release) -----
+def install_base_hooks(ws):
+    """Merge base/claude/hooks.json into the workspace settings; idempotent."""
+    hooks_file = BASE_DIR / "claude" / "hooks.json"
+    if not ws.wants("claude") or not hooks_file.exists():
+        return []
+    settings = _load_settings(ws.settings_path)
+    added = merge_hooks(settings, json.loads(hooks_file.read_text()))
+    _save_settings(ws.settings_path, settings)
+    existing = ws.manifest.hooks.get("base", [])
+    for e, entry in added:
+        if [e, entry] not in existing:
+            existing.append([e, entry])
+    ws.manifest.hooks["base"] = existing
+    return added
 
 
 # ----- install / uninstall -----

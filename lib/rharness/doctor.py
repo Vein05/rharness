@@ -21,6 +21,21 @@ def _hook_present(settings_path: Path) -> bool:
     return False
 
 
+def _session_hooks_present(settings_path: Path) -> bool:
+    if not settings_path.exists():
+        return False
+    try:
+        data = json.loads(settings_path.read_text())
+    except json.JSONDecodeError:
+        return False
+    hooks = data.get("hooks", {})
+    has_start = any("rharness brief" in str(h.get("command", ""))
+                    for e in hooks.get("SessionStart", []) for h in e.get("hooks", []))
+    has_stop = any("session-check" in str(h.get("command", ""))
+                   for e in hooks.get("Stop", []) for h in e.get("hooks", []))
+    return has_start and has_stop
+
+
 def doctor_checks(ws, env=None):
     env = env or os.environ
 
@@ -38,6 +53,10 @@ def doctor_checks(ws, env=None):
                        "not inside a workspace (run `rharness init` or pass --workspace)"))
         return checks
     checks.append(("workspace manifest", True, str(ws.manifest.path)))
+    if ws.wants("claude"):
+        ok = _session_hooks_present(ws.settings_path)
+        checks.append(("session hooks registered", ok,
+                       str(ws.settings_path) if ok else "missing; run `rharness adopt .` to re-register"))
     if "rtk" in ws.manifest.plugins:
         checks.append(("rtk binary on PATH", bool(which("rtk")),
                        which("rtk") or "missing; see plugins/rtk/setup.sh"))
