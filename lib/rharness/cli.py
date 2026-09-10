@@ -59,7 +59,32 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("adopt", help="retrofit an existing workspace or project")
     s.add_argument("dir", nargs="?", default=".")
     s.add_argument("--projects", help="comma-separated subset of project dirs")
+
+    s = sub.add_parser("lint", help="check projects against the rules")
+    s.add_argument("dir", nargs="?")
+    s.add_argument("--json", action="store_true", help="one JSON object per finding")
     return p
+
+
+def run_lint(args):
+    from .lint import (format_findings, format_json, lint_project, lint_workspace,
+                       writing_template_region)
+    from .lintcfg import load_lint_config
+    target = Path(args.dir).resolve() if args.dir else None
+    findings = []
+    if target and ((target / "CHARTER.md").exists() or (target / "AGENTS.md").exists()) \
+            and not (target / MANIFEST_REL).exists():
+        root = find_root(target.parent)
+        cfg = load_lint_config(root / "lint.toml" if root else None)
+        findings = lint_project(target, cfg, writing_template_region())
+    else:
+        ws = Workspace.open(start=target, override=args.workspace)
+        cfg = load_lint_config(ws.root / "lint.toml")
+        for pdir in ws.projects():
+            findings += lint_project(pdir, cfg, writing_template_region())
+        findings += lint_workspace(ws, cfg)
+    print(format_json(findings) if args.json else format_findings(findings))
+    return 1 if findings else 0
 
 
 def _table_has(agents_text, slug):
