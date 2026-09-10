@@ -24,7 +24,7 @@ These are not defaults you configure. They are the product.
 
 1. **A kill criterion before any spend.** Every project starts with
    `CHARTER.md`: the core question, the result that means the paper exists,
-   and the result that means stop. No paid run without both.
+   and the result that means stop.
 2. **Spec before code.** The headline table is designed in `spec/scoring.md`
    before a single number exists, with its control row and its ceiling row.
    Code without a spec is a probe and never produces a paper number.
