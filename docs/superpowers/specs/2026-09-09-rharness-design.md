@@ -27,7 +27,10 @@ outside this repo, any web UI, restyling the figures toolkit.
 ```
 rharness/
   install.sh                  curl target; bash; downloads a release, links the CLI
-  bin/rharness                Python 3.9+ stdlib, single file, no pip dependencies
+  bin/rharness                six-line entrypoint; adds lib/ to sys.path
+  lib/rharness/               Python 3.9+ stdlib package, no pip dependencies:
+                              cli, templates, manifest, regions, workspace, gitutil,
+                              plugin, lint, lintcfg, doctor, update, brief, session
   base/
     workspace/
       AGENTS.md               root orientation with managed region
@@ -84,7 +87,7 @@ Idempotent: running `install.sh` twice is a no-op except for a newer version.
 
 ## 4. CLI
 
-`bin/rharness` is a single Python file. Subcommands:
+`bin/rharness` dispatches to `lib/rharness/cli.py`. Subcommands:
 
 | Command | Behavior |
 |---|---|
@@ -98,6 +101,9 @@ Idempotent: running `install.sh` twice is a no-op except for a newer version.
 | `update` | Section 3, then `apply` on the current workspace. |
 | `list` | Installed plugins, available plugins, versions. |
 | `version` | Prints the store version. |
+| `brief [project]` | Orientation bundle for a fresh session: charter status, newest handoff, last changelog entry, authoritative docs, lint findings. Workspace table when run at the root. |
+| `session-check` | Stop-hook check: a project touched today must have today's handoff and changelog; emits a block decision otherwise. |
+| `plugin new <name>` | Scaffolds a plugin directory. |
 
 Global flags: `--workspace <dir>` to override discovery (walk up from cwd
 until a `.rharness/manifest.json` is found), `--dry-run` for every writing
@@ -261,3 +267,9 @@ objects with the same fields.
   (`plugin_sources`). `rharness plugin new` scaffolds a plugin.
   `plugin.json` gains `requires.env`, reported after install. Documented in
   `docs/plugins.md`.
+- 2026-09-10: section 2 and section 4 rewritten to match the shipped layout
+  (entrypoint plus package) and the added commands `brief`, `session-check`,
+  and `plugin new`. Project templates gained `CLAUDE.md` and a managed
+  `base` region in `AGENTS.md` (session protocol and workspace rules).
+  `base/claude/hooks.json` ships SessionStart and Stop hooks that `init` and
+  `adopt` merge for Claude Code workspaces.
