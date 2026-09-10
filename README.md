@@ -1,7 +1,7 @@
 # rharness
 
 <p align="center"><img src="assets/cover.svg" alt="rharness" width="80%"></p>
-<p align="center"><sub>Cover made with the rharness <code>figures</code> plugin: SVG source, geometry checker, unmodified brand marks.</sub></p>
+<p align="center"><sub>Cover made with the rharness <code>figures</code> plugin.</sub></p>
 
 <p align="center">
   <a href="https://github.com/Vein05/rharness/actions/workflows/ci.yml"><img src="https://github.com/Vein05/rharness/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
