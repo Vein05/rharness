@@ -75,3 +75,11 @@ def test_no_stripped_content_leaks():
     for p, text in _text_files(BASE):
         m = banned.search(text)
         assert not m, f"{p}: {m.group(0) if m else ''}"
+
+
+def test_no_leaks_in_plugins():
+    terms = [t.strip() for t in (REPO / "tests" / "banned_terms.txt").read_text().splitlines() if t.strip()]
+    for p, text in _text_files(REPO / "plugins"):
+        low = text.lower()
+        for t in terms:
+            assert t.lower() not in low, f"{p}: {t}"
