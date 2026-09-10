@@ -65,7 +65,37 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="one JSON object per finding")
 
     sub.add_parser("doctor", help="check the machine and workspace")
+
+    s = sub.add_parser("update", help="fetch the latest release and re-apply managed files")
+    s.add_argument("--no-fetch", action="store_true", help="only re-apply managed files")
+    s.add_argument("--force", action="store_true", help="overwrite modified files (backed up first)")
     return p
+
+
+def run_update(args):
+    from .paths import rharness_home
+    from .update import apply_managed, fetch_release, relink, resolve_version
+    if not args.no_fetch:
+        try:
+            version = resolve_version()
+            home = rharness_home()
+            fetch_release(version, home, None)
+            relink(home, version)
+            print(f"fetched {version} into {home / 'store' / version}")
+        except Exception as e:  # network, tar, or filesystem errors
+            err(f"fetch failed: {e}")
+            return 2
+    ws = Workspace.open(override=args.workspace)
+    replaced, kept = apply_managed(ws, force=args.force, dry_run=args.dry_run)
+    ws.manifest.version = __version__
+    if not args.dry_run:
+        ws.manifest.save()
+    print(f"{len(replaced)} replaced, {len(kept)} kept (modified; diffs above)")
+    for r in replaced:
+        print(f"  replaced {r}")
+    for k in kept:
+        print(f"  kept {k}")
+    return 0
 
 
 def run_doctor(args):
