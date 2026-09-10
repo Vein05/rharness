@@ -72,6 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="check the machine and workspace")
 
+    s = sub.add_parser("brief", help="orientation for a fresh session: charter, handoff, changelog, lint")
+    s.add_argument("project", nargs="?", help="project slug or path (default: the project containing cwd)")
+    s.add_argument("--lines", type=int, default=80, help="cap on handoff lines shown (default 80)")
+
     s = sub.add_parser("update", help="fetch the latest release and re-apply managed files")
     s.add_argument("--no-fetch", action="store_true", help="only re-apply managed files")
     s.add_argument("--force", action="store_true", help="overwrite modified files (backed up first)")
@@ -101,6 +105,23 @@ def run_update(args):
         print(f"  replaced {r}")
     for k in kept:
         print(f"  kept {k}")
+    return 0
+
+
+def run_brief(args):
+    from .brief import find_project, project_brief, workspace_brief
+    from .lintcfg import load_lint_config
+    ws = Workspace.open(override=args.workspace)
+    cfg = load_lint_config(ws.root / "lint.toml")
+    if args.project:
+        cand = Path(args.project)
+        pdir = cand.resolve() if cand.is_dir() else ws.root / args.project
+        if pdir not in ws.projects():
+            err(f"{args.project} is not a project in {ws.root}")
+            return 2
+    else:
+        pdir = find_project(ws, Path.cwd())
+    print(project_brief(pdir, cfg, lines=args.lines) if pdir else workspace_brief(ws, cfg))
     return 0
 
 
