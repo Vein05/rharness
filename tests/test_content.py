@@ -9,7 +9,7 @@ ALLOWED = re.compile(r"\{\{(" + "|".join(PLACEHOLDERS) + r")\}\}")
 ANY = re.compile(r"\{\{[^{}]*\}\}")
 
 REQUIRED_PROJECT_FILES = [
-    "CHARTER.md", "AGENTS.md", "README.md", ".gitignore", ".gitattributes", "requirements.txt",
+    "CHARTER.md", "AGENTS.md", "CLAUDE.md", "README.md", ".gitignore", ".gitattributes", "requirements.txt",
     "spec/README.md", "spec/scoring.md", "research/README.md",
     "paper/writing.md", "paper/Makefile", "paper/main.tex", "paper/references.bib",
     "data/README.md", "papers/INDEX.md", "handoff/README.md", "changelog/README.md",
@@ -83,3 +83,9 @@ def test_no_leaks_in_plugins():
         low = text.lower()
         for t in terms:
             assert t.lower() not in low, f"{p}: {t}"
+
+
+def test_project_agents_has_base_region_with_workspace_rules():
+    t = (BASE / "project" / "AGENTS.md").read_text()
+    body = get_region(t, "base")
+    assert body and "rharness brief" in body and "Workspace rules" in body

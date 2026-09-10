@@ -88,3 +88,17 @@ def test_adopt_dry_run(tmp_path, home):
     root = _legacy_workspace(tmp_path / "research")
     code, out, err = run_cli(["--dry-run", "adopt", str(root)], cwd=tmp_path)
     assert code == 0 and not (root / ".rharness").exists() and "would" in out
+
+
+def test_adopt_inserts_rules_region_into_existing_project_agents(tmp_path, home):
+    root = _legacy_workspace(tmp_path / "research")
+    code, out, err = run_cli(["adopt", str(root)], cwd=tmp_path)
+    assert code == 0, err
+    agents = (root / "p1" / "AGENTS.md").read_text()
+    assert agents.startswith("# p1 agents")
+    assert "<!-- rharness:begin base -->" in agents and "Workspace rules" in agents
+    assert (root / "p1" / "CLAUDE.md").exists()
+    pm = json.loads((root / "p1" / ".rharness" / "project.json").read_text())
+    assert pm["files"]["AGENTS.md"]["owner"] == "user" and pm["files"]["AGENTS.md"]["region"] is True
+    code, out, err = run_cli(["adopt", str(root)], cwd=tmp_path)
+    assert (root / "p1" / "AGENTS.md").read_text().count("rharness:begin base") == 1

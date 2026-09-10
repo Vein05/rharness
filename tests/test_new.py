@@ -58,3 +58,20 @@ def test_new_from_subdir_finds_workspace(ws):
 def test_new_dry_run(ws):
     code, out, err = run_cli(["--dry-run", "new", "seam"], cwd=ws)
     assert code == 0 and not (ws / "seam").exists() and "CHARTER.md" in out
+
+
+def test_new_project_has_claude_include_and_rules_region(ws):
+    run_cli(["new", "seam"], cwd=ws)
+    assert (ws / "seam" / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
+    agents = (ws / "seam" / "AGENTS.md").read_text()
+    assert "<!-- rharness:begin base -->" in agents and "rharness brief" in agents
+    pm = json.loads((ws / "seam" / ".rharness" / "project.json").read_text())
+    assert pm["files"]["AGENTS.md"]["region"] is True
+
+
+def test_new_codex_only_project_has_no_claude_md(tmp_path, home):
+    root = tmp_path / "r"
+    run_cli(["init", str(root), "--harness", "codex", "--no-plugins"], cwd=tmp_path)
+    code, out, err = run_cli(["new", "seam"], cwd=root)
+    assert code == 0, err
+    assert not (root / "seam" / "CLAUDE.md").exists()

@@ -341,17 +341,30 @@ def scaffold_project(ws, dest: Path, slug: str, title: str, dry_run: bool):
         return None
     dest.mkdir(parents=True, exist_ok=True)
     written, skipped = copy_tree(src, dest, ctx)
+    if not ws.wants("claude") and "CLAUDE.md" in written:
+        (dest / "CLAUDE.md").unlink()
+        written.remove("CLAUDE.md")
+    if "AGENTS.md" in skipped:
+        # existing project: insert the managed workspace-rules region, keep the user's text
+        region = get_region((src / "AGENTS.md").read_text(), "base")
+        agents = dest / "AGENTS.md"
+        updated = upsert_region(agents.read_text(), "base", region)
+        if updated != agents.read_text():
+            agents.write_text(updated)
     pm_path = dest / PROJECT_MANIFEST_REL
     if pm_path.exists():
         pm = Manifest.load(pm_path)
     else:
         pm = Manifest.new(pm_path, __version__, harness=ws.manifest.harness,
                           ctx={"slug": slug, "title": title})
+    region_files = ("paper/writing.md", "AGENTS.md")
     for rel in written:
-        pm.record(rel, "base", source=f"base/project/{rel}", region=rel == "paper/writing.md")
+        pm.record(rel, "base", source=f"base/project/{rel}", region=rel in region_files)
     for rel in skipped:
         if pm.entry(rel) is None:
-            pm.record(rel, "user", region=rel == "paper/writing.md")
+            pm.record(rel, "user", source=f"base/project/{rel}", region=rel in region_files)
+        elif rel == "AGENTS.md":
+            pm.record(rel, pm.entry(rel)["owner"], source=f"base/project/{rel}", region=True)
     if not gitutil.is_repo(dest):
         gitutil.init_repo(dest)
     if gitutil.has_lfs():
