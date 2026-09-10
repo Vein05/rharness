@@ -132,3 +132,42 @@ def test_init_installs_rtk_by_default(tmp_path, home):
     m = json.loads((root / ".rharness" / "manifest.json").read_text())
     assert m["plugins"] == ["rtk"]
     assert (root / ".rharness" / "hooks" / "rtk-rewrite.sh").exists()
+
+
+@pytest.mark.parametrize("name", ["figures", "review-panel", "wandb", "ideas"])
+def test_shipped_plugins_install_and_remove_cleanly(ws, name):
+    code, out, err = run_cli(["add", name], cwd=ws)
+    assert code == 0, err
+    m = json.loads((ws / ".rharness" / "manifest.json").read_text())
+    assert name in m["plugins"]
+    assert f"plugin:{name}" in (ws / "AGENTS.md").read_text()
+    code, out, err = run_cli(["remove", name], cwd=ws)
+    assert code == 0, err
+    assert f"plugin:{name}" not in (ws / "AGENTS.md").read_text()
+    m = json.loads((ws / ".rharness" / "manifest.json").read_text())
+    assert not [k for k, v in m["files"].items() if v["owner"] == f"plugin:{name}"]
+
+
+def test_wandb_project_file_lands_in_projects(ws):
+    run_cli(["new", "seam"], cwd=ws)
+    run_cli(["add", "wandb"], cwd=ws)
+    helper = ws / "seam" / "tools" / "wandb_init.py"
+    assert helper.exists() and 'project="seam"' in helper.read_text()
+
+
+def test_figures_plugin_ships_checker_and_style(ws):
+    run_cli(["add", "figures"], cwd=ws)
+    for rel in ("figures/check_svg.py", "figures/figure-style.md", "figures/AGENTS.md",
+                "figures/CLAUDE.md", "figures/Makefile.template", "figures/paper.mplstyle"):
+        assert (ws / rel).exists(), rel
+    assert os.access(ws / "figures" / "get-icon.sh", os.X_OK)
+
+
+def test_shipped_plugin_manifests_valid():
+    for d in sorted((REPO / "plugins").iterdir()):
+        if not d.is_dir():
+            continue
+        meta = json.loads((d / "plugin.json").read_text())
+        assert meta["name"] == d.name
+        assert set(meta["harness"]) <= {"claude", "codex"}
+        assert (d / "agents.md").exists()

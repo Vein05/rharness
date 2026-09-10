@@ -1,0 +1,7 @@
+{
+  "name": "ideas",
+  "description": "Ranked ideas backlog with scoop-pulse dates and a dead-cells list",
+  "version": "0.1.0",
+  "harness": ["claude", "codex"],
+  "requires": {"binaries": [], "python": ">=3.9"}
+}

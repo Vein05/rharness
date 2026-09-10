@@ -1,0 +1,14 @@
+{
+  "name": "abstract-pilot",
+  "description": "Cheap open-weight panel for blind, independently scored abstract A/B comparisons.",
+  "concurrency": 12,
+  "estimate_output_tokens": 1200,
+  "models": [
+    {"id": "deepseek/deepseek-v4-flash", "label": "deepseek-flash", "samples_per_variant": 3},
+    {"id": "z-ai/glm-4.7-flash", "label": "glm-flash", "samples_per_variant": 3},
+    {"id": "qwen/qwen3-235b-a22b-2507", "label": "qwen", "samples_per_variant": 3},
+    {"id": "deepseek/deepseek-v4-pro", "label": "deepseek-pro", "samples_per_variant": 3},
+    {"id": "moonshotai/kimi-k2.5", "label": "kimi", "samples_per_variant": 3},
+    {"id": "xiaomi/mimo-v2.5", "label": "mimo", "samples_per_variant": 3}
+  ]
+}

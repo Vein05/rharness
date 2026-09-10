@@ -1,0 +1,43 @@
+# Cost and reliability controls for panel.py. Edit here, not in code.
+
+retries:
+  max_attempts: 4        # per review; exponential backoff 2^attempt seconds
+  backoff_base_s: 2
+  rate_limit_wait_s: 30   # 429s wait this long (x attempt) instead of the fast backoff
+
+limits:
+  max_output_tokens: 8000
+  concurrency: 12   # parallel requests; OpenRouter tolerates this fine for these models
+  budget_usd_per_run: 5.00   # hard ceiling: no new requests once estimated spend crosses this
+
+# $/Mtok from OpenRouter listings (July 2026). Used by `estimate` and the live
+# budget guard. A model missing here refuses to run — add it before running.
+pricing_usd_per_mtok:
+  google/gemini-3.6-flash:   {in: 1.5,  out: 7.5}
+  anthropic/claude-sonnet-5: {in: 2.0,  out: 10.0}
+  openai/gpt-5.3-chat:       {in: 1.75, out: 14.0}
+  openai/gpt-5.4:            {in: 2.5,  out: 15.0}
+  x-ai/grok-4.5:             {in: 2.0,  out: 6.0}
+  # open-source pilot mirror (panels/aaai2027-pilot.json)
+  deepseek/deepseek-v4-flash: {in: 0.098, out: 0.196}
+  z-ai/glm-4.7-flash:         {in: 0.0605, out: 0.30}
+  qwen/qwen3-235b-a22b-2507:  {in: 0.09,  out: 0.55}
+  openai/gpt-oss-120b:         {in: 0.03,  out: 0.17}
+  openai/gpt-5.6-luna:         {in: 0.20,  out: 1.20}
+  nvidia/nemotron-3-super-120b-a12b: {in: 0.085, out: 0.40}
+  minimax/minimax-m2.5:        {in: 0.22,  out: 0.90}
+  deepseek/deepseek-v4-pro:   {in: 0.435, out: 0.87}
+  moonshotai/kimi-k2.5:       {in: 0.57,  out: 2.30}
+  xiaomi/mimo-v2.5:           {in: 0.14,  out: 0.28}
+  # zero-cost :free variants (panels/aaai2027-zero.json); rate-limited 20/min, 50/day
+  "nvidia/nemotron-3-super-120b-a12b:free": {in: 0.0, out: 0.0}
+  "nvidia/nemotron-3-ultra-550b-a55b:free": {in: 0.0, out: 0.0}
+  "google/gemma-4-31b-it:free":             {in: 0.0, out: 0.0}
+  "openai/gpt-oss-20b:free":                {in: 0.0, out: 0.0}
+
+# Assumed completion tokens per review for pre-run estimates (calibrated on
+# corrections-r0 actuals: gemini ~3k, sonnet-5 ~7k; reasoning models higher).
+estimate_output_tokens:
+  default: 3000
+  anthropic/claude-sonnet-5: 7000
+  openai/gpt-5.4: 9000

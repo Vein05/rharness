@@ -1,0 +1,11 @@
+{
+  "name": "aaai2027-pilot",
+  "description": "Default iteration panel: cheap open-weight models with reliable JSON output (~$0.20/full run). Use for all revision rounds; confirm on aaai2027 with --final at the end. Supersedes aaai2027-zero (free-tier models were too flaky: 429s, malformed JSON).",
+  "models": [
+    {"id": "deepseek/deepseek-v4-flash", "label": "deepseek-flash", "tier": "target", "prompts": ["form", "naive"], "samples": 6},
+    {"id": "xiaomi/mimo-v2.5", "label": "mimo", "tier": "target", "prompts": ["form", "naive"], "samples": 6},
+    {"id": "qwen/qwen3-235b-a22b-2507", "label": "qwen", "tier": "target", "prompts": ["form", "naive"], "samples": 6},
+    {"id": "deepseek/deepseek-v4-pro", "label": "tough-canary-os", "tier": "tough", "prompts": ["form"], "samples": 3},
+    {"id": "moonshotai/kimi-k2.5", "label": "holdout-os", "tier": "holdout", "prompts": ["form"], "samples": 3}
+  ]
+}

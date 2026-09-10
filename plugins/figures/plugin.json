@@ -1,0 +1,7 @@
+{
+  "name": "figures",
+  "description": "Central SVG-first paper-figure pipeline with an automated geometry checker",
+  "version": "0.1.0",
+  "harness": ["claude", "codex"],
+  "requires": {"binaries": ["rsvg-convert", "pdffonts"], "python": ">=3.9"}
+}

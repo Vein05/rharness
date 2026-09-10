@@ -1,0 +1,26 @@
+# Per-paper figure Makefile. Copy to figures/<paper-slug>/Makefile and list your figures.
+PYTHON ?= python3
+FIGS := fig1-overview
+PDFS := $(FIGS:%=build/%.pdf)
+
+.PHONY: all gray verify clean
+all: $(PDFS) verify
+
+build/%.pdf: src/%.svg
+	@mkdir -p build build/grayscale
+	$(PYTHON) ../check_svg.py $<
+	rsvg-convert -f pdf -o $@ $<
+	rsvg-convert -f png --zoom 2 -o build/$*.png $<
+
+gray: $(PDFS)
+	@for f in $(FIGS); do magick build/$$f.png -colorspace Gray build/grayscale/$$f.png; done
+
+verify: $(PDFS)
+	@for f in $(PDFS); do \
+		pdffonts "$$f" | awk 'NR > 2 && !($$1 == "[none]" && $$2 == "Type") && ($$(NF-4) != "yes" || $$(NF-3) != "yes") { bad=1 } END { exit bad }' || \
+		{ echo "font embedding/subsetting check failed: $$f"; exit 1; }; \
+	done
+	@echo "verified embedded/subset PDF fonts"
+
+clean:
+	rm -rf build

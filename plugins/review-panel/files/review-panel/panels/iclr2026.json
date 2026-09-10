@@ -1,0 +1,11 @@
+{
+  "name": "iclr2026",
+  "description": "ICLR 2026 open-weight review panel for the SEAM paper. Uses the real ICLR 2026 form (even-only 0-10 overall rating; soundness/presentation/contribution 1-4; confidence 1-5) via prompts/iclr-form.md (rubric'd) and prompts/iclr-naive.md (reviewer who pasted the PDF into a chatbot). Cheap current open models. target = free-tier-chatbot threat model; tough = the reasoning canary that must not drop while targets rise; holdout (kimi) is never consulted during revision — run it only at baseline and final. Ground truth for calibration: SEP (ICLR 2025, this paper's sibling) landed at 6.67 avg with soundness 2-3, contribution 2-3, presentation 3-4. Qwen3-235B was removed as overgenerous on 2026-08-18. GPT-OSS-120B and GPT-5.6 Luna were too harsh on accepted SEP. Nemotron 3 Super reproduced SEP's 6.67 mean and 6/8 score pattern and is adopted only with the calibrated ICLR-form prompt.",
+  "models": [
+    {"id": "deepseek/deepseek-v4-flash", "label": "deepseek-flash", "tier": "target", "prompts": ["iclr-form", "iclr-naive"], "samples": 6},
+    {"id": "xiaomi/mimo-v2.5", "label": "mimo", "tier": "target", "prompts": ["iclr-form", "iclr-naive"], "samples": 6},
+    {"id": "nvidia/nemotron-3-super-120b-a12b", "label": "nemotron-super", "tier": "target", "prompts": ["iclr-form"], "samples": 6, "reasoning_effort": "medium"},
+    {"id": "deepseek/deepseek-v4-pro", "label": "tough-canary-os", "tier": "tough", "prompts": ["iclr-form"], "samples": 3},
+    {"id": "moonshotai/kimi-k2.5", "label": "holdout-os", "tier": "holdout", "prompts": ["iclr-form"], "samples": 3}
+  ]
+}
