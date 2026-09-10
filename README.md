@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2563EB" alt="MIT"></a>
 </p>
 
-rharness is an opinionated research harness for ML and NLP work done with
+rharness(research-harness) is an opinionated research harness for ML and NLP work done with
 coding agents. One command gives you a workspace where every paper project
 has a contract the agent must obey, a record of every session, and a lint
 that tells you when the two drift apart. It is markdown and small scripts,
