@@ -18,7 +18,17 @@
   .install code { flex: 1; font-size: 14px; overflow-x: auto; white-space: nowrap; }
   .install button { flex: none; background: #2563EB; color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .install button:hover { background: #1D4ED8; }
-  h2 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 26px; margin: 56px 0 6px; letter-spacing: -0.01em; }
+  h2:first-of-type { margin-top: 0; }
+  ul.why { padding-left: 1.2em; margin: 0; }
+  ul.why li { margin: 0 0 12px; }
+  .plugin { margin: 0 0 22px; }
+  .plugin h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  .plugin h3 small { font-weight: 400; font-size: 14px; margin-left: 8px; }
+  .plugin p { margin: 0 0 4px; }
+  .plugin .how { font-size: 15px; }
+  nav.toc { margin: 0 0 8px; font-size: 15px; }
+  nav.toc a { margin-right: 16px; }
   p.sub { margin: 0 0 24px; }
   ol { padding-left: 1.4em; margin: 0; }
   li { margin: 0 0 18px; }
@@ -36,6 +46,17 @@
   <p class="lead">An opinionated research harness for ML and NLP work done with coding agents. One command, a disciplined workspace.</p>
   <div class="install"><code id="cmd">curl -fsSL https://raw.githubusercontent.com/Vein05/rharness/main/install.sh | sh</code><button type="button" id="copy">Copy</button></div>
 
+  <nav class="toc"><a href="#why">Why</a><a href="#opinions">Opinions</a><a href="#plugins">Plugins</a><a href="https://github.com/Vein05/rharness">GitHub</a></nav>
+
+  <h2 id="why">Why</h2>
+  <ul class="why">
+    <li>Research moves faster than it ever has. Coding agents write the code, run the experiments, and draft the text.</li>
+    <li>Speed does not change the obligation. Every number in a paper must trace back to the run and the code that produced it, and the record must survive a hostile reread.</li>
+    <li>Working on several projects at once multiplies the risk. When five ideas are in flight, memory is not a system. Verification has to be built into the workspace, with a human reading the evidence and not only the summary.</li>
+    <li>Accountability comes with the faster tools, not instead of them. The agent does the work; the researcher owns the claim.</li>
+    <li>Hence rharness: the contracts, records, and checks that make that ownership real, written as files the agent reads and you edit.</li>
+  </ul>
+
   <h2 id="opinions">Opinions</h2>
   <p class="sub">These are not defaults you configure. They are the product.</p>
   <ol>
@@ -50,6 +71,40 @@
     <li><b>Prose passes the three-reader test.</b> A strong student, a PhD student, and a senior scientist must all get the result on one pass.</li>
     <li><b>Drift is measured, not assumed.</b> <code>rharness lint</code> checks every rule above that a script can check, and exits nonzero when one fails.</li>
   </ol>
+
+  <h2 id="plugins">Plugins</h2>
+  <p class="sub">Opt-in packs of guidance, and sometimes a helper or a hook. Installing one inserts a section into the workspace <code>AGENTS.md</code>, so the agent follows its rules from the next session on. Removing one takes the section out and deletes the files you did not edit.</p>
+
+  <div class="plugin">
+    <h3>rtk <small>installed by default</small></h3>
+    <p>A token-saving command proxy for Claude Code. It rewrites common shell commands such as git, grep, and test runners to compact-output equivalents through a hook, so the agent reads less and you pay less. <code>rharness doctor</code> checks that the hook is still registered.</p>
+    <p class="how">Comes with <code>rharness init</code>. Re-add with <code>rharness add rtk</code>. Needs <code>rtk</code> and <code>jq</code>, installed by its setup script if missing.</p>
+  </div>
+  <div class="plugin">
+    <h3>figures</h3>
+    <p>An SVG-first figure pipeline: a style guide, a geometry checker that fails the build on overflowing text, off-axis rows, and drifting strokes, an icon fetcher, and a matplotlib style. Every figure goes through render, inspect, critique, fix. The mark at the top of this page was made with it.</p>
+    <p class="how"><code>rharness add figures</code>. Needs <code>rsvg-convert</code>, <code>pdffonts</code>, and Pillow.</p>
+  </div>
+  <div class="plugin">
+    <h3>review-panel</h3>
+    <p>Runs your paper through panels of LLM reviewers at multiple model tiers, with a holdout canary and a hard spend ceiling. The diagnostic that matters is whether each reviewer's summary states your actual claim; misreads locate framing failures. No paid run starts without an estimate shown and your approval.</p>
+    <p class="how"><code>rharness add review-panel</code>. Needs <code>OPENROUTER_API_KEY</code>, <code>pdftotext</code>, and <code>pip install openai pyyaml</code>.</p>
+  </div>
+  <div class="plugin">
+    <h3>wandb</h3>
+    <p>Weights &amp; Biases tracking rules for every training or evaluation run: descriptive names, logged config, seed, model and dataset identifiers, and the git commit. Each project gets a run initialiser that fills those fields in.</p>
+    <p class="how"><code>rharness add wandb</code>. Needs <code>WANDB_API_KEY</code> and <code>pip install wandb</code>.</p>
+  </div>
+  <div class="plugin">
+    <h3>ideas</h3>
+    <p>A ranked ideas backlog, one file per idea, with the date of its last novelty scan and a dead-cells list of ideas confirmed scooped so they are not proposed again. Re-scan before chartering.</p>
+    <p class="how"><code>rharness add ideas</code>. Needs nothing.</p>
+  </div>
+  <div class="plugin">
+    <h3>Your own</h3>
+    <p><code>rharness plugin new my-plugin</code> scaffolds a plugin directory with its manifest, its <code>AGENTS.md</code> section, and a README. Push it to GitHub and anyone installs it with <code>rharness add owner/repo</code>, or <code>owner/repo/subdir</code> when several plugins share a repository. Local paths and git URLs work too.</p>
+    <p class="how"><a href="https://github.com/Vein05/rharness/blob/main/docs/plugins.md">Plugin guide</a></p>
+  </div>
 
   <footer><a href="https://github.com/Vein05/rharness">github.com/Vein05/rharness</a></footer>
 </main>
