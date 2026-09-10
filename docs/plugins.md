@@ -18,7 +18,33 @@ rharness list
 ```
 
 External plugins are fetched once into `~/.rharness/plugins/<name>/` and
-reused from there. `rharness list` shows each plugin's origin (`builtin` or
+reused from there. Pin a source with `@ref`: `alice/x@v1.2`,
+`alice/x/plugins/y@main`, or `https://host/x.git@<commit>`. The fetched
+commit is recorded beside the plugin and shown by `rharness list`.
+
+## Trust
+
+A plugin from outside the release can add rules the agent will follow,
+register Claude Code hooks that run shell commands, copy files into every
+project, and run `setup.sh` on your machine. Before installing one,
+`rharness add` prints a capability summary:
+
+```
+Plugin x from /Users/you/.rharness/plugins/x (commit 3b1f9c2e7a4d)
+  3 file(s) into the workspace root; 1 file(s) into every project
+  AGENTS.md section: yes, 12 lines (the agent will follow it)
+  Claude Code skills: 1
+  hook PreToolUse: runs `"$CLAUDE_PROJECT_DIR/.rharness/hooks/x.sh"`
+  setup.sh: yes, a shell script will run on this machine
+  requires: env OPENROUTER_API_KEY; binaries pdftotext
+Install this plugin? [y/N]
+```
+
+It proceeds only on `y`, or with the global `--yes` flag
+(`rharness --yes add ...`) for scripts. Without a terminal and without
+`--yes` it refuses. Built-in plugins ship with the verified release and do
+not prompt. Read the plugin directory before saying yes to anything that
+registers a hook or ships a setup script. `rharness list` shows each plugin's origin (`builtin` or
 `user`), whether it is installed in the current workspace, and the source it
 came from.
 

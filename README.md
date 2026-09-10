@@ -48,7 +48,8 @@ These are not defaults you configure. They are the product. Also at
 ## Quickstart
 
 Install. Requires `python3` 3.9 or newer, `git`, and `tar`; `git-lfs` is
-recommended.
+recommended. The installer downloads the release tarball and its
+`SHA256SUMS` from GitHub Releases and refuses to install on a mismatch.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Vein05/rharness/main/install.sh | sh
@@ -111,17 +112,50 @@ The agent has already read `AGENTS.md`, so it knows the rules. Then write
 `spec/scoring.md`. Then the first research document, usually a novelty scan;
 the eleven document skeletons are in `.rharness/archetypes/`.
 
+Every session starts oriented. `rharness brief` prints the charter status,
+the newest handoff, the last changelog entry, the authoritative documents,
+and open lint findings for the project you are in. In Claude Code this runs
+automatically at session start, and a Stop hook refuses to let a session end
+on a day with commits but no handoff and changelog.
+
+```sh
+rharness brief seam
+```
+```
+# Brief: seam (Paste-boundary instruction absorption) — 2026-09-12
+
+## Charter
+Core question: Do models fold a trailing remark into the pasted document?
+Success criterion: NOT YET
+Kill criterion: NOT TRIGGERED (stop if recall < 0.5 on the held-out split)
+
+## Newest handoff: handoff/2026-09-11.md
+...
+```
+
+When a trace or scored file is frozen, record it. Every number in the paper
+should point at a row in `research/PROVENANCE.md`, and lint fails if a
+recorded file changes or disappears.
+
+```sh
+rharness hash traces/run-v2-full.jsonl --note "Table 1 rows 1-3"
+```
+
 Check the workspace whenever you like. Lint exits 1 when anything fails, so
-it works in a pre-commit hook or a cron job.
+it works in a pre-commit hook or a cron job. It checks structure and the
+contract fields it can read: that the kill criterion states a threshold,
+that the scoring spec keeps its control and ceiling rows, that code has a
+spec, that recorded artifacts are unchanged. It does not judge the science.
 
 ```sh
 rharness lint
 ```
 ```
-error seam/: no commits
+error seam/CHARTER.md: kill criterion states no threshold; the section has only a Status line
+error seam/traces/run-v2-full.jsonl: traces/run-v2-full.jsonl changed since it was recorded (2026-09-11, 8746a9ae0dc60310); re-run `rharness hash` and re-check every number that cites it
+warning seam/spec/: 4 source file(s) but no component spec in spec/ besides scoring.md; code without a spec is a probe
 warning seam/handoff/: newest handoff 2026-09-09 is 3 days older than newest commit 2026-09-12
-warning seam/.gitattributes: LFS rules missing: traces/**
-Summary: 1 errors, 2 warnings
+Summary: 2 errors, 2 warnings
 ```
 
 Check the machine. This is also what catches a silently dropped hook.
@@ -169,14 +203,20 @@ session on.
 | [ideas](plugins/ideas/) | Workspace | Ranked ideas backlog with novelty-scan dates and a dead-cells list | nothing | No |
 
 ```sh
-rharness add figures                          # built in
-rharness add alice/research-plugins/plugins/x # from GitHub: owner/repo[/subdir]
-rharness add ~/code/my-plugin                 # from a local directory
-rharness list                                 # origin, status, source of each
+rharness add figures                                  # built in, no prompt
+rharness add alice/research-plugins/plugins/x         # from GitHub: owner/repo[/subdir]
+rharness add alice/research-plugins/plugins/x@v1.2    # pinned to a tag, branch, or commit
+rharness add ~/code/my-plugin                         # from a local directory
+rharness list                                         # origin, status, source, commit
 ```
 
-`add` prints any environment variable or binary a plugin needs that your
-shell does not have.
+Installing a plugin from outside the release means trusting that code on
+your machine: it can add rules the agent will follow, register Claude Code
+hooks, and run a setup script. So `add` first prints what the plugin would
+do, including every hook command, and asks before proceeding. Pass `--yes`
+to accept non-interactively. Built-in plugins ship with the release and
+install without a prompt. `add` also prints any environment variable or
+binary the plugin needs that your shell does not have.
 
 Write your own with `rharness plugin new my-plugin`, which scaffolds the
 directory with a README explaining how to publish it. The full format, the
@@ -199,13 +239,16 @@ rharness owns only the text between `<!-- rharness:begin ... -->` and
 | `rharness init [dir]` | Create a workspace and install the default plugins |
 | `rharness new <slug> [--title T]` | Scaffold a paper project inside the workspace |
 | `rharness adopt [dir] [--projects a,b]` | Retrofit an existing workspace or project without overwriting |
-| `rharness add <plugin> [--refresh]` | Install a plugin: built-in name, local path, git URL, or `owner/repo[/subdir]` |
+| `rharness brief [project]` | Orientation for a fresh session: charter, handoff, changelog, authoritative docs, lint |
+| `rharness hash <paths> [--note T]` | Record frozen artifacts in `research/PROVENANCE.md` |
+| `rharness add <plugin> [--refresh]` | Install a plugin: built-in name, local path, git URL, or `owner/repo[/subdir][@ref]`; external sources ask first, `--yes` accepts |
 | `rharness remove <plugin>` | Uninstall a plugin; modified files are kept and listed |
 | `rharness list` | Plugins with origin, install status, and source |
 | `rharness plugin new <name> [--dir D]` | Scaffold a plugin directory |
 | `rharness lint [dir] [--json]` | Check projects against the rules; exit 1 on findings |
 | `rharness doctor` | Check python, git, git-lfs, rtk, and hook registration |
-| `rharness update [--no-fetch] [--force]` | Fetch the latest release and re-apply managed files |
+| `rharness update [--no-fetch] [--force]` | Fetch the latest release, verify it against `SHA256SUMS`, re-apply managed files |
+| `rharness session-check` | Behind the Claude Code Stop hook: today's work needs today's handoff and changelog |
 | `rharness version` | Print the installed version |
 
 Global flags: `--workspace <dir>` to skip discovery, `--dry-run` to print
