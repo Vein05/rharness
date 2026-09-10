@@ -44,9 +44,10 @@ It proceeds only on `y`, or with the global `--yes` flag
 (`rharness --yes add ...`) for scripts. Without a terminal and without
 `--yes` it refuses. Built-in plugins ship with the verified release and do
 not prompt. Read the plugin directory before saying yes to anything that
-registers a hook or ships a setup script. `rharness list` shows each plugin's origin (`builtin` or
-`user`), whether it is installed in the current workspace, and the source it
-came from.
+registers a hook or ships a setup script.
+
+`rharness list` shows each plugin's origin (`builtin` or `user`), whether it
+is installed in the current workspace, and the source and commit it came from.
 
 After install, `add` prints any environment variable or binary the plugin
 declares in `requires` that is missing in your shell. For example the

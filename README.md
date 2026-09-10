@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/Vein05/rharness/actions/workflows/ci.yml"><img src="https://github.com/Vein05/rharness/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
-  <a href="https://github.com/Vein05/rharness/releases"><img src="https://img.shields.io/badge/release-v0.1.0-2563EB" alt="release"></a>
+  <a href="https://github.com/Vein05/rharness/releases"><img src="https://img.shields.io/badge/release-v0.2.0-2563EB" alt="release"></a>
   <img src="https://img.shields.io/badge/python-3.9%2B-2563EB" alt="python 3.9+">
   <img src="https://img.shields.io/badge/deps-none-2563EB" alt="no dependencies">
   <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%7C%20Codex-2563EB" alt="works with Claude Code and Codex">
