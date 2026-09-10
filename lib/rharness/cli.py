@@ -7,6 +7,8 @@ from . import __version__, gitutil
 from .manifest import Manifest, today
 from .paths import BASE_DIR
 from .templates import copy_tree
+from .plugin import (PluginNotFound, apply_all_project_files, install_plugin,
+                     list_available, uninstall_plugin)
 from .workspace import MANIFEST_REL, PROJECT_MANIFEST_REL, NotAWorkspace, Workspace
 
 HARNESSES = ("claude", "codex")
@@ -45,7 +47,34 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("new", help="scaffold a paper project inside the workspace")
     s.add_argument("slug", type=slug_type)
     s.add_argument("--title", help="human title (default: slug)")
+
+    s = sub.add_parser("add", help="install a plugin")
+    s.add_argument("name")
+    s = sub.add_parser("remove", help="uninstall a plugin")
+    s.add_argument("name")
+    sub.add_parser("list", help="list plugins")
     return p
+
+
+def run_add(args):
+    ws = Workspace.open(override=args.workspace)
+    return install_plugin(ws, args.name, dry_run=args.dry_run)
+
+
+def run_remove(args):
+    ws = Workspace.open(override=args.workspace)
+    if args.name not in ws.manifest.plugins:
+        err(f"{args.name} is not installed")
+        return 1
+    return uninstall_plugin(ws, args.name, dry_run=args.dry_run)
+
+
+def run_list(args):
+    ws = Workspace.open(override=args.workspace)
+    installed = set(ws.manifest.plugins)
+    for name in list_available():
+        print(f"{name:14s} {'installed' if name in installed else 'available'}")
+    return 0
 
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -147,7 +176,6 @@ def run_new(args) -> int:
     scaffold_project(ws, dest, slug, title, args.dry_run)
     if args.dry_run:
         return 0
-    from .plugin import apply_all_project_files
     apply_all_project_files(ws, dest)
     agents = ws.agents_path.read_text() if ws.agents_path.exists() else ""
     ws.agents_path.write_text(append_project_row(agents, slug, title))
@@ -188,7 +216,6 @@ def run_init(args) -> int:
     for rel in written:
         print(f"  wrote {rel}")
     if not args.no_plugins:
-        from .plugin import install_plugin
         ws = Workspace(root, m)
         for name in DEFAULT_PLUGINS:
             rc = install_plugin(ws, name, dry_run=False)
@@ -217,5 +244,8 @@ def main(argv) -> int:
     try:
         return handler(args)
     except NotAWorkspace as e:
+        err(str(e))
+        return 2
+    except PluginNotFound as e:
         err(str(e))
         return 2
