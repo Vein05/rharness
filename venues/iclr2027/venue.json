@@ -1,0 +1,17 @@
+{
+  "venue": "iclr", "cycle": "2027", "name": "iclr2027",
+  "revision": "2026-09-10",
+  "deadlines": {"abstract": "2026-09-18T23:59:00-12:00", "full": "2026-09-25T23:59:00-12:00"},
+  "primary": "full",
+  "page_limit": {"main": 9, "excludes": ["references", "appendix", "ethics statement", "reproducibility statement"]},
+  "anonymous": true,
+  "template": {"repo": "ICLR/Master-Template", "ref": "46ed6f4c6cef5b175dde23639e77d44c3463b230",
+               "files": ["iclr2027/iclr2027_conference.sty", "iclr2027/iclr2027_conference.bst"]},
+  "required_sections": ["abstract", "introduction"],
+  "sources": [
+    {"kind": "cfp", "url": "https://iclr.cc/Conferences/2027/CallForPapers", "retrieved": "2026-09-10"},
+    {"kind": "author-guide", "url": "https://iclr.cc/Conferences/2027/AuthorGuidelines", "retrieved": "2026-09-10"},
+    {"kind": "template", "url": "https://github.com/ICLR/Master-Template", "retrieved": "2026-09-10"},
+    {"kind": "reviewer-guide", "url": "https://iclr.cc/Conferences/2027/ReviewerGuidelines", "retrieved": "2026-09-10"}
+  ]
+}

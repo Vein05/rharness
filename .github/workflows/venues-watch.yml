@@ -1,0 +1,28 @@
+name: venues-watch
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+permissions:
+  issues: write
+  contents: read
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: watch
+        run: python scripts/venues-watch.py | tee watch.txt
+        continue-on-error: true
+      - if: steps.watch.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "venue source page changed ($(date -u +%F))" \
+            --body "$(cat watch.txt)
+
+          Review the page, update venue.json and its revision date, then run scripts/venues-watch.py --update." \
+            --label venues || true

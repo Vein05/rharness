@@ -1,0 +1,8 @@
+{
+  "name": "iclr2027",
+  "description": "ICLR 2027: deadlines, 9-page main body, double-blind, official style files, review form",
+  "version": "0.1.0",
+  "harness": ["claude", "codex"],
+  "scope": "project",
+  "kind": "venue"
+}
