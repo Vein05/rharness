@@ -747,5 +747,21 @@ def cmd_list(ws, cfg):
 
 
 def cmd_check(ws, pdir, cfg, build=False):
-    raise VenueError("venue check is not implemented yet")
+    from . import venuecheck
+    if build:
+        from .paper import build as paper_build
+        code, msg = paper_build(pdir / "paper")
+        print(msg if code == 0 else f"rharness: {msg}", file=sys.stdout if code == 0 else sys.stderr)
+        if code != 0:
+            return code
+    if not read_block(pdir):
+        print(f"rharness: {pdir.name} has no venue", file=sys.stderr)
+        return 1
+    refresh_if_stale(ws, pdir, cfg)
+    findings = venuecheck.lint_findings(pdir)
+    for sev, path, msg in findings:
+        print(f"{sev} {pdir.name}/{path}: {msg}")
+    errors = sum(1 for f in findings if f[0] == "error")
+    print(f"Summary: {errors} errors, {len(findings) - errors} warnings")
+    return 1 if findings else 0
 

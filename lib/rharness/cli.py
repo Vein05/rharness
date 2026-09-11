@@ -106,6 +106,10 @@ def build_parser() -> argparse.ArgumentParser:
     vs.add_parser("update", parents=[pp], help="refresh the venue package from upstream now")
     vs.add_parser("remove", parents=[pp], help="detach the venue (confirmed)")
     vs.add_parser("list", help="venues in the index")
+
+    s = sub.add_parser("paper", help="paper build")
+    pb = s.add_subparsers(dest="paper_cmd")
+    pb.add_parser("build", parents=[pp], help="latexmk in paper/; with TinyTeX, installs missing packages via tlmgr")
     return p
 
 
@@ -172,6 +176,20 @@ def run_venue(args):
         return 2
     err(f"unknown venue subcommand {cmd}")
     return 2
+
+
+def run_paper(args):
+    from .paper import build
+    if args.paper_cmd != "build":
+        err("usage: rharness paper build [--project SLUG]")
+        return 2
+    ws = Workspace.open(override=args.workspace)
+    pdir = select_project(ws, getattr(args, "project", None))
+    if pdir is None:
+        return 2
+    code, msg = build(pdir / "paper")
+    print(msg if code == 0 else f"rharness: {msg}", file=sys.stdout if code == 0 else sys.stderr)
+    return code
 
 
 def run_update(args):
