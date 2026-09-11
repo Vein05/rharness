@@ -15,14 +15,22 @@ jobs:
         with:
           python-version: "3.12"
       - id: watch
-        run: python scripts/venues-watch.py | tee watch.txt
+        run: python scripts/venues-watch.py > watch.txt 2>&1
         continue-on-error: true
+      - run: cat watch.txt
+        if: always()
       - if: steps.watch.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue create --title "venue source page changed ($(date -u +%F))" \
-            --body "$(cat watch.txt)
+          title="venue source page changed ($(date -u +%F))"
+          body="$(cat watch.txt)
 
-          Review the page, update venue.json and its revision date, then run scripts/venues-watch.py --update." \
-            --label venues || true
+          Review the page, update venue.json and its revision date, then run scripts/venues-watch.py --update."
+          open=$(gh issue list --state open --search "venue source page changed" --json number --jq length)
+          if [ "$open" -eq 0 ]; then
+            gh issue create --title "$title" --body "$body"
+          else
+            number=$(gh issue list --state open --search "venue source page changed" --json number --jq 'max_by(.number).number')
+            gh issue comment "$number" --body "$body"
+          fi

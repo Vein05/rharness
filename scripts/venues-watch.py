@@ -21,26 +21,35 @@ def page_hash(url: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-update = "--update" in sys.argv
-changed = []
-for d in sorted(p for p in VENUES.iterdir() if p.is_dir() and (p / "venue.json").exists()):
-    v = json.loads((d / "venue.json").read_text())
-    lock_path = d / "sources.lock.json"
-    lock = json.loads(lock_path.read_text()) if lock_path.exists() else {}
-    new = {}
-    for s in v.get("sources", []):
-        try:
-            new[s["url"]] = page_hash(s["url"])
-        except Exception as e:  # unreachable page is reported, not fatal
-            print(f"{d.name}: {s['url']}: fetch failed: {e}")
-            new[s["url"]] = lock.get(s["url"], "")
-        if lock.get(s["url"]) and lock[s["url"]] != new[s["url"]]:
-            changed.append(f"{d.name}: {s['kind']} page changed: {s['url']}")
-    if update or not lock_path.exists():
-        lock_path.write_text(json.dumps(new, indent=2, sort_keys=True) + "\n")
-for c in changed:
-    print(c)
-if changed and not update:
-    print(f"{len(changed)} source page(s) changed; review venue.json and bump revision, then run with --update")
-    sys.exit(1)
-print("sources unchanged" if not changed else "lock files updated")
+def run(venues_dir, update=False, fetch=page_hash) -> int:
+    venues_dir = Path(venues_dir)
+    changed = []
+    for d in sorted(p for p in venues_dir.iterdir() if p.is_dir() and (p / "venue.json").exists()):
+        v = json.loads((d / "venue.json").read_text())
+        lock_path = d / "sources.lock.json"
+        have_lock = lock_path.exists()
+        lock = json.loads(lock_path.read_text()) if have_lock else {}
+        if not have_lock and not update:
+            print(f"no sources.lock.json for {d.name}; run scripts/venues-watch.py --update")
+        new = {}
+        for s in v.get("sources", []):
+            try:
+                new[s["url"]] = fetch(s["url"])
+            except Exception as e:  # unreachable page is reported, not fatal; no entry is stored
+                print(f"{d.name}: {s['url']}: fetch failed: {e}")
+                continue
+            if lock.get(s["url"]) and lock[s["url"]] != new[s["url"]]:
+                changed.append(f"{d.name}: {s['kind']} page changed: {s['url']}")
+        if update:  # rewriting from new also drops URLs no longer in venue.json
+            lock_path.write_text(json.dumps(new, indent=2, sort_keys=True) + "\n")
+    for c in changed:
+        print(c)
+    if changed and not update:
+        print(f"{len(changed)} source page(s) changed; review venue.json and bump revision, then run with --update")
+        return 1
+    print("sources unchanged" if not changed else "lock files updated")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run(VENUES, "--update" in sys.argv))
