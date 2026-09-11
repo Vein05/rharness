@@ -88,7 +88,90 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("update", help="fetch the latest release and re-apply managed files")
     s.add_argument("--no-fetch", action="store_true", help="only re-apply managed files")
     s.add_argument("--force", action="store_true", help="overwrite modified files (backed up first)")
+
+    pp = argparse.ArgumentParser(add_help=False)
+    pp.add_argument("--project", help="project slug when not inside one")
+    s = sub.add_parser("venue", parents=[pp],
+                       help="submission target for a project: status, add, change, lock, unlock, check, update, remove, list")
+    vs = s.add_subparsers(dest="venue_cmd")
+    a = vs.add_parser("add", parents=[pp], help="attach a venue: `add iclr 2027`, `add iclr2027`, or owner/repo/venues/<name>[@ref]")
+    a.add_argument("tokens", nargs="+", metavar="venue")
+    a.add_argument("--refresh", action="store_true", help="re-fetch the package before installing")
+    c = vs.add_parser("change", parents=[pp], help="swap the venue (confirmed)")
+    c.add_argument("tokens", nargs="+", metavar="venue")
+    vs.add_parser("lock", parents=[pp], help="venue checks report at full severity")
+    vs.add_parser("unlock", parents=[pp], help="back to targeted (confirmed)")
+    k = vs.add_parser("check", parents=[pp], help="run the venue checks only")
+    k.add_argument("--build", action="store_true", help="run `paper build` first")
+    vs.add_parser("update", parents=[pp], help="refresh the venue package from upstream now")
+    vs.add_parser("remove", parents=[pp], help="detach the venue (confirmed)")
+    vs.add_parser("list", help="venues in the index")
     return p
+
+
+def select_project(ws, slug):
+    from .brief import find_project
+    projects = ws.projects()
+    if slug:
+        cand = ws.root / slug
+        if cand not in projects:
+            err(f"{slug} is not a project in {ws.root}")
+            return None
+        return cand
+    pdir = find_project(ws, Path.cwd())
+    if pdir:
+        return pdir
+    if not projects:
+        err("no projects in this workspace; run `rharness new <slug>` first")
+        return None
+    if sys.stdin.isatty():
+        for i, p in enumerate(projects, 1):
+            print(f"  {i}. {p.name}")
+        try:
+            choice = input("Project number: ").strip()
+        except EOFError:
+            choice = ""
+        if choice.isdigit() and 1 <= int(choice) <= len(projects):
+            return projects[int(choice) - 1]
+        err("no project chosen")
+        return None
+    err("not inside a project; pass --project <slug>. Projects: " + ", ".join(p.name for p in projects))
+    return None
+
+
+def run_venue(args):
+    from . import venue as V
+    from .lintcfg import load_lint_config
+    ws = Workspace.open(override=args.workspace)
+    cfg = load_lint_config(ws.root / "lint.toml")
+    cmd = args.venue_cmd or "status"
+    try:
+        if cmd == "list":
+            return V.cmd_list(ws, cfg)
+        pdir = select_project(ws, getattr(args, "project", None))
+        if pdir is None:
+            return 2
+        if cmd == "status":
+            return V.cmd_status(ws, pdir, cfg)
+        if cmd == "add":
+            return V.cmd_add(ws, pdir, args.tokens, cfg, yes=args.yes, dry_run=args.dry_run, refresh=args.refresh)
+        if cmd == "change":
+            return V.cmd_change(ws, pdir, args.tokens, cfg, yes=args.yes, dry_run=args.dry_run)
+        if cmd == "lock":
+            return V.cmd_lock(ws, pdir, cfg)
+        if cmd == "unlock":
+            return V.cmd_unlock(ws, pdir, cfg, yes=args.yes)
+        if cmd == "check":
+            return V.cmd_check(ws, pdir, cfg, build=args.build)
+        if cmd == "update":
+            return V.cmd_update(ws, pdir, cfg, yes=args.yes)
+        if cmd == "remove":
+            return V.cmd_remove(ws, pdir, cfg, yes=args.yes, dry_run=args.dry_run)
+    except V.VenueError as e:
+        err(str(e))
+        return 2
+    err(f"unknown venue subcommand {cmd}")
+    return 2
 
 
 def run_update(args):
@@ -349,6 +432,8 @@ def run_list(args):
     rows = []
     from .plugin import fetched_commit
     for name, plugin in available_plugins().items():
+        if plugin.scope == "project":
+            continue
         src = sources.get(name, "")
         commit = fetched_commit(plugin.dir)
         if src and commit:

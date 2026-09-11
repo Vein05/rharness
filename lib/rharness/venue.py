@@ -1,19 +1,23 @@
 """Venue state on a project: the venue block, charter notes, package install and removal."""
+import datetime as _dt
 import hashlib
 import io
 import json
 import re
 import shutil
+import sys
 import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
 
 from .manifest import Manifest, today
-from .plugin import Plugin, clone_at, remote_url, source_info, tree_hash, user_plugins_dir
+from .plugin import (Plugin, PluginNotFound, capability_summary, clone_at, confirm, fetch_plugin,
+                     remote_url, source_info, tree_hash, user_plugins_dir)
 from .regions import remove_region, upsert_region
 from .templates import copy_tree
-from .venuemeta import validate
+from .venuemeta import (days_until, is_source_spec, normalize_name, primary_deadline,
+                        split_pin, validate)
 from .workspace import PROJECT_MANIFEST_REL
 
 
@@ -204,7 +208,7 @@ def _upsert_agents(pdir: Path, pm: Manifest, plugin: Plugin):
     pm.record("AGENTS.md", prev.get("owner", "base"), source=prev.get("source", "base/project/AGENTS.md"), region=True)
 
 
-def install_package(ws, pdir: Path, plugin: Plugin, venue: dict, source: str, ref) -> list:
+def install_package(ws, pdir: Path, plugin: Plugin, venue: dict, source: str, ref, note=None) -> list:
     pdir = Path(pdir)
     name = plugin.name
     pm = load_pm(pdir)
@@ -218,13 +222,14 @@ def install_package(ws, pdir: Path, plugin: Plugin, venue: dict, source: str, re
     info = source_info(plugin.dir)
     pm.data["venue"] = venue_block(name, source, ref, info.get("commit", ""), info.get("fetched", ""),
                                    tree_hash(plugin.dir))
-    charter_note(pdir, pm, f"venue target set to {name}")
+    pm.data["venue"]["template"] = venue.get("template")
+    charter_note(pdir, pm, note or f"venue target set to {name}")
     pm.save()
     set_table_cell(ws, pdir.name, f"{name} (targeted)")
     return written
 
 
-def remove_package(ws, pdir: Path, name: str, note: str):
+def remove_package(ws, pdir: Path, name: str, note=None):
     pdir = Path(pdir)
     pm = load_pm(pdir)
     removed, kept = [], []
@@ -249,7 +254,225 @@ def remove_package(ws, pdir: Path, name: str, note: str):
         prev = pm.entry("AGENTS.md") or {}
         pm.record("AGENTS.md", prev.get("owner", "base"), source=prev.get("source", "base/project/AGENTS.md"), region=True)
     pm.data.pop("venue", None)
-    charter_note(pdir, pm, note)
+    if note:
+        charter_note(pdir, pm, note)
     pm.save()
     set_table_cell(ws, pdir.name, "-")
     return removed, kept
+
+
+AGENT_SENTENCE = ("If you are an agent, confirm with the user before re-running as "
+                  "`rharness --yes venue {sub} ...`: this swaps the paper style, the check set, "
+                  "and the deadline agents see.")
+TINYTEX = 'wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh'
+
+
+def resolve_source(tokens, cfg):
+    """(spec, name_hint, from_index, ref). Bare names resolve against cfg['venue_index']."""
+    if len(tokens) == 1 and is_source_spec(tokens[0]):
+        base, ref = split_pin(tokens[0])
+        return tokens[0], base.rstrip("/").rsplit("/", 1)[-1], False, ref
+    name = normalize_name(tokens)
+    if not name:
+        raise VenueError(f"cannot make a venue name from {' '.join(tokens)!r}")
+    return f"{cfg['venue_index']}/{name}", name, True, None
+
+
+def fetch_package(spec: str, name_hint: str, refresh: bool = False) -> Plugin:
+    cache = package_dir(name_hint)
+    if not refresh and (cache / "plugin.json").exists() and source_info(cache).get("spec") == spec:
+        plugin = Plugin(name_hint, cache)
+    else:
+        try:
+            d = fetch_plugin(spec)
+        except PluginNotFound as e:
+            raise VenueError(f"no venue package at {spec}: {e}")
+        plugin = Plugin(d.name, d)
+    if plugin.scope != "project" or plugin.kind != "venue":
+        raise VenueError(f"{plugin.name} is not a venue package (plugin.json needs scope=project and kind=venue)")
+    return plugin
+
+
+def confirm_or_refuse(lines, yes: bool, sub: str) -> bool:
+    for l in lines:
+        print(l)
+    if yes:
+        return True
+    if confirm(f"Proceed with `venue {sub}`?"):
+        return True
+    print(AGENT_SENTENCE.format(sub=sub))
+    return False
+
+
+def _engine_hint():
+    if shutil.which("latexmk") or shutil.which("pdflatex"):
+        return []
+    return [f"  No TeX engine on PATH. Optional: install TinyTeX with `{TINYTEX}`, or download the compiled PDF "
+            "from Overleaf into paper/main.pdf; the page check needs one of the two."]
+
+
+def cmd_add(ws, pdir, tokens, cfg, yes=False, dry_run=False, refresh=False, note=None):
+    if read_block(pdir) and note is None:
+        print(f"rharness: {pdir.name} already targets {read_block(pdir)['name']}; use `rharness venue change`", file=sys.stderr)
+        return 1
+    spec, hint, from_index, ref = resolve_source(tokens, cfg)
+    plugin = fetch_package(spec, hint, refresh=refresh)
+    venue = load_venue(plugin.dir)
+    if dry_run:
+        print(f"would install venue {plugin.name} into {pdir.name} from {spec}")
+        return 0
+    if not from_index:
+        lines = [capability_summary(plugin, ws),
+                 f"  checks.py: {'yes, runs in-process during lint' if (plugin.dir / 'checks.py').exists() else 'no'}"]
+        if not yes:
+            for l in lines:
+                print(l)
+            print("Not installed. Re-run with --yes (before the subcommand) to accept this source.")
+            return 1
+    written = install_package(ws, pdir, plugin, venue, spec, ref, note=note)
+    print(f"Installed venue {plugin.name} into {pdir.name} (targeted)")
+    for rel in written:
+        print(f"  wrote {pdir.name}/{rel}")
+    stem = None
+    tpl = venue.get("template") or {}
+    for rel in tpl.get("files", []) + tpl.get("extract", []):
+        if rel.endswith((".sty", ".cls")):
+            stem = Path(rel).stem
+            break
+    print("  These findings are expected to be open until the agent acts on them:")
+    if stem:
+        print(f"    add \\usepackage{{{stem}}} at the % rharness:venue-style line in paper/main.tex")
+    print("    build paper/main.pdf (`rharness paper build`) or download it from Overleaf into paper/main.pdf")
+    for l in _engine_hint():
+        print(l)
+    print(f"Next: `rharness venue` for status and checks; `rharness venue lock` when the paper is committed to {plugin.name}")
+    return 0
+
+
+def _age_days(iso: str) -> int:
+    try:
+        t = _dt.datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return 0
+    now = _dt.datetime.now(tz=t.tzinfo) if t.tzinfo else _dt.datetime.now()
+    return max(0, (now - t).days)
+
+
+def status_lines(pdir, block, venue, now=None):
+    out = [f"Venue: {block['name']} ({block['state']}" + (f", locked {block['locked_on']}" if block.get("locked_on") else "") + ")"]
+    pk, _ = primary_deadline(venue)
+    for key, iso in venue["deadlines"].items():
+        d = days_until(iso, now=now)
+        when = f"in {d} days" if d >= 0 else f"{-d} days ago"
+        out.append(f"  {key} deadline {iso} {when}" + (" (primary)" if key == pk else ""))
+    out.append(f"  package commit {block.get('commit', '')[:12]} fetched {block.get('fetched', '?')} "
+               f"({_age_days(block.get('fetched', ''))} days old)" + (f", pinned to {block['ref']}" if block.get("ref") else ""))
+    return out
+
+
+def cmd_status(ws, pdir, cfg, env=None):
+    from . import venuecheck
+    block = read_block(pdir)
+    if not block:
+        print(f"No venue on {pdir.name}. Attach one with `rharness venue add <venue> <year>`; `rharness venue list` shows the index.")
+        return 0
+    try:
+        venue = load_venue(package_dir(block["name"]))
+    except VenueError as e:
+        print(f"Venue: {block['name']} ({block['state']}); package not usable: {e}. Run `rharness venue update`.")
+        return 1
+    for l in status_lines(pdir, block, venue):
+        print(l)
+    findings = venuecheck.lint_findings(pdir, env=env)
+    print("Checks:")
+    if not findings:
+        print("  none")
+    for sev, path, msg in findings:
+        print(f"  {sev} {pdir.name}/{path}: {msg}")
+    return 0
+
+
+def _scoring_proposed(pdir) -> bool:
+    f = Path(pdir) / "spec" / "scoring.md"
+    return f.exists() and re.search(r"^Status: proposed", f.read_text(errors="replace"), re.M) is not None
+
+
+def cmd_lock(ws, pdir, cfg):
+    from .venuecheck import _success_not_yet
+    block = read_block(pdir)
+    if not block:
+        print(f"rharness: {pdir.name} has no venue; `rharness venue add` first", file=sys.stderr)
+        return 1
+    if block["state"] == "locked":
+        print(f"{block['name']} is already locked (since {block['locked_on']})")
+        return 0
+    if _success_not_yet(pdir):
+        print("warning: the success criterion in CHARTER.md is still NOT YET; locking a venue before the result exists is a hope, not a plan")
+    if _scoring_proposed(pdir):
+        print("warning: spec/scoring.md is still proposed; freeze the headline table before locking")
+    pm = load_pm(pdir)
+    block["state"], block["locked_on"] = "locked", today()
+    pm.data["venue"] = block
+    charter_note(pdir, pm, f"venue {block['name']} locked")
+    pm.save()
+    set_table_cell(ws, pdir.name, f"{block['name']} (locked)")
+    print(f"Locked {block['name']} on {pdir.name}; venue checks now report at full severity")
+    return 0
+
+
+def cmd_unlock(ws, pdir, cfg, yes=False):
+    block = read_block(pdir)
+    if not block or block["state"] != "locked":
+        print(f"rharness: {pdir.name} has no locked venue", file=sys.stderr)
+        return 1
+    if not confirm_or_refuse([f"Unlock {block['name']} on {pdir.name} (locked {block['locked_on']}); venue checks drop to warnings."],
+                             yes, "unlock"):
+        return 1
+    pm = load_pm(pdir)
+    block["state"], block["locked_on"] = "targeted", None
+    pm.data["venue"] = block
+    charter_note(pdir, pm, f"venue {block['name']} unlocked")
+    pm.save()
+    set_table_cell(ws, pdir.name, f"{block['name']} (targeted)")
+    print(f"Unlocked {block['name']} on {pdir.name}")
+    return 0
+
+
+def cmd_remove(ws, pdir, cfg, yes=False, dry_run=False):
+    block = read_block(pdir)
+    if not block:
+        print(f"rharness: {pdir.name} has no venue", file=sys.stderr)
+        return 1
+    pm = load_pm(pdir)
+    files = pm.files_owned_by(owner(block["name"]))
+    lines = [f"Remove venue {block['name']} from {pdir.name}:"] + [f"  would remove {r} (kept if modified)" for r in files] + \
+            ["  would drop the AGENTS.md venue section, the venue block, and the deadline shown to agents"]
+    if dry_run:
+        for l in lines:
+            print(l)
+        return 0
+    if not confirm_or_refuse(lines, yes, "remove"):
+        return 1
+    removed, kept = remove_package(ws, pdir, block["name"], f"venue {block['name']} removed")
+    for r in removed:
+        print(f"  removed {r}")
+    for k in kept:
+        print(f"  kept {k} (modified; now untracked)")
+    print(f"Removed venue {block['name']} from {pdir.name}")
+    return 0
+
+
+def cmd_list(ws, cfg):
+    raise VenueError("venue list is not implemented yet")
+
+
+def cmd_change(ws, pdir, tokens, cfg, yes=False, dry_run=False):
+    raise VenueError("venue change is not implemented yet")
+
+
+def cmd_check(ws, pdir, cfg, build=False):
+    raise VenueError("venue check is not implemented yet")
+
+
+def cmd_update(ws, pdir, cfg, yes=False):
+    raise VenueError("venue update is not implemented yet")

@@ -79,6 +79,23 @@ def project_brief(pdir: Path, cfg: dict, lines: int = 80) -> str:
     ch = charter_summary(pdir)
     out += ["## Charter", f"Core question: {ch['core']}", f"Success criterion: {ch['success']}",
             f"Kill criterion: {ch['kill']}", ""]
+    from .venue import read_block, package_dir, load_venue, VenueError, status_lines, _age_days
+    from .venuemeta import days_until, primary_deadline
+    blk = read_block(pdir)
+    if blk:
+        try:
+            venue = load_venue(package_dir(blk["name"]))
+            pk, _ = primary_deadline(venue)
+            parts = []
+            for key, iso in venue["deadlines"].items():
+                d = days_until(iso)
+                parts.append(f"{key} deadline {iso[:10]} " + (f"in {d} days" if d >= 0 else f"{-d} days ago") + (" (primary)" if key == pk else ""))
+            age = _age_days(blk.get("fetched", ""))
+            out += [f"## Venue: {blk['name']} ({blk['state']})", "; ".join(parts),
+                    f"Package fetched {blk.get('fetched', '?')[:10]} ({age} days old)" +
+                    ("; older than 7 days, run `rharness venue update`" if age > 7 else ""), ""]
+        except VenueError as e:
+            out += [f"## Venue: {blk['name']} ({blk['state']})", f"Package not usable: {e}. Run `rharness venue update`.", ""]
     if gitutil.is_repo(pdir):
         newest = gitutil.newest_commit_date(pdir) or "none"
         out += ["## Git", f"Newest commit: {newest}; uncommitted changes: {gitutil.dirty_count(pdir)}", ""]
@@ -112,13 +129,24 @@ def project_brief(pdir: Path, cfg: dict, lines: int = 80) -> str:
 
 def workspace_brief(ws, cfg: dict) -> str:
     out = [f"# Brief: workspace {ws.root} — {today()}", "",
-           "| project | kill criterion | newest commit | dirty | newest handoff | lint |", "|---|---|---|---:|---|---|"]
+           "| project | venue | kill criterion | newest commit | dirty | newest handoff | lint |", "|---|---|---|---|---:|---|---|"]
     for pdir in ws.projects():
+        from .venue import read_block, package_dir, load_venue, VenueError
+        from .venuemeta import days_until, primary_deadline
+        blk = read_block(pdir)
+        vcell = "-"
+        if blk:
+            try:
+                v = load_venue(package_dir(blk["name"]))
+                _, iso = primary_deadline(v)
+                vcell = f"{blk['name']} {blk['state']} {days_until(iso)}d"
+            except VenueError:
+                vcell = f"{blk['name']} {blk['state']} (package missing)"
         ch = charter_summary(pdir)
         h = newest_dated(pdir / "handoff")
         findings = lint_project(pdir, cfg, writing_template_region(), venue_checks=False)
         errors = sum(1 for f in findings if f.severity == "error")
-        out.append(f"| {pdir.name} | {ch['kill']} | {gitutil.newest_commit_date(pdir) or 'none'} | "
+        out.append(f"| {pdir.name} | {vcell} | {ch['kill']} | {gitutil.newest_commit_date(pdir) or 'none'} | "
                    f"{gitutil.dirty_count(pdir)} | {DATE_MD.match(h.name).group(1) if h else 'none'} | "
                    f"{errors}E/{len(findings) - errors}W |")
     out += ["", "Run `rharness brief <project>` for one project. Rules: AGENTS.md at the workspace root."]
