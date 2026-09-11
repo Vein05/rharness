@@ -10,10 +10,10 @@ from rharness.plugin import Plugin, fetch_plugin
 from rharness.workspace import Workspace
 
 
-def _fetched_plugin(tmp_path, home):
+def _fetched_plugin(tmp_path, monkeypatch):
     env, index, repo = venue_index_repo(tmp_path)
-    import os
-    os.environ.update(env)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
     d = fetch_plugin(f"{index}/testconf2026")
     return Plugin("testconf2026", d), env, index
 
@@ -45,9 +45,7 @@ def test_set_table_cell(ws, tmp_path, home):
 
 
 def test_install_and_remove_package(ws, tmp_path, home, monkeypatch):
-    plugin, env, index = _fetched_plugin(tmp_path, home)
-    for k, v in env.items():
-        monkeypatch.setenv(k, v)
+    plugin, env, index = _fetched_plugin(tmp_path, monkeypatch)
     p = make_project(ws)
     wsobj = Workspace.open(override=ws)
     venue = V.load_venue(plugin.dir)
@@ -108,3 +106,28 @@ def test_load_venue_rejects_invalid(tmp_path):
     with pytest.raises(V.VenueError) as e:
         V.load_venue(d)
     assert "primary" in str(e.value)
+
+
+def test_template_refuses_main_tex_and_keeps_files_it_does_not_own(ws, tmp_path, home, capsys):
+    import hashlib, io, zipfile
+    import pytest
+    p = make_project(ws)
+    pm = V.load_pm(p)
+    bad = {"name": "zipconf2026",
+           "template": {"repo": "lab/template-repo", "ref": "main", "files": ["main.tex"]}}
+    with pytest.raises(V.VenueError) as e:
+        V.fetch_templates(p, bad, pm, "zipconf2026")
+    assert "main.tex" in str(e.value)
+    # a template file that collides with a base-owned scaffold file leaves it alone
+    before = (p / "paper" / "references.bib").read_text()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("kit/references.bib", "% not yours\n")
+    data = buf.getvalue()
+    zpath = tmp_path / "collide.zip"; zpath.write_bytes(data)
+    venue = {"name": "zipconf2026", "template": {"url": f"file://{zpath}",
+             "sha256": hashlib.sha256(data).hexdigest(), "extract": ["kit/references.bib"]}}
+    assert V.fetch_templates(p, venue, pm, "zipconf2026") == []
+    assert (p / "paper" / "references.bib").read_text() == before
+    assert "kept existing paper/references.bib" in capsys.readouterr().out
+    assert pm.entry("paper/references.bib")["owner"] == "base"

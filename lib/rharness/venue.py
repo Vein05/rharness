@@ -115,15 +115,25 @@ def _record_paper_file(pm: Manifest, pdir: Path, name: str, rel: str):
     pm.record(rel, owner(name))
 
 
-def _foreign_file(pm: Manifest, rel: str) -> bool:
-    """True when rel exists on disk and the manifest has no entry for it: a user's file."""
-    return (pm.root / rel).exists() and pm.entry(rel) is None
+def _keep_existing(pm: Manifest, name: str, rel: str) -> bool:
+    """True when rel exists on disk and is not this venue's to overwrite.
+
+    That covers a user's own file (no manifest entry) and anything owned by someone
+    else: the base scaffold, a plugin, or another venue.
+    """
+    if not (pm.root / rel).exists():
+        return False
+    entry = pm.entry(rel)
+    return entry is None or entry.get("owner") != owner(name)
 
 
 def fetch_templates(pdir: Path, venue: dict, pm: Manifest, name: str) -> list:
     tpl = venue.get("template")
     if not tpl:
         return []
+    for item in (tpl.get("files") if "repo" in tpl else tpl.get("extract")) or []:
+        if Path(item).name == "main.tex":
+            raise VenueError("template must not ship main.tex")
     paper = Path(pdir) / "paper"
     paper.mkdir(exist_ok=True)
     written = []
@@ -141,8 +151,8 @@ def fetch_templates(pdir: Path, venue: dict, pm: Manifest, name: str) -> list:
                 if not src.is_file():
                     raise VenueError(f"template file {rel} not found in {tpl['repo']}@{tpl['ref']}")
                 dest = paper / Path(rel).name
-                if _foreign_file(pm, f"paper/{dest.name}"):
-                    print(f"  kept existing paper/{dest.name} (not owned by rharness; not overwritten)")
+                if _keep_existing(pm, name, f"paper/{dest.name}"):
+                    print(f"  kept existing paper/{dest.name} (not owned by venue {name}; not overwritten)")
                     continue
                 shutil.copy2(src, dest)
                 written.append(f"paper/{dest.name}")
@@ -166,8 +176,8 @@ def fetch_templates(pdir: Path, venue: dict, pm: Manifest, name: str) -> list:
             if member not in names:
                 raise VenueError(f"template zip has no member {member}")
             dest = paper / Path(member).name
-            if _foreign_file(pm, f"paper/{dest.name}"):
-                print(f"  kept existing paper/{dest.name} (not owned by rharness; not overwritten)")
+            if _keep_existing(pm, name, f"paper/{dest.name}"):
+                print(f"  kept existing paper/{dest.name} (not owned by venue {name}; not overwritten)")
                 continue
             dest.write_bytes(z.read(member))
             written.append(f"paper/{dest.name}")
@@ -198,13 +208,12 @@ def install_package(ws, pdir: Path, plugin: Plugin, venue: dict, source: str, re
     pdir = Path(pdir)
     name = plugin.name
     pm = load_pm(pdir)
-    written = []
+    written = fetch_templates(pdir, venue, pm, name)
     if plugin.project_files_dir.exists():
         w, _ = copy_tree(plugin.project_files_dir, pdir, _project_ctx(ws, pdir, pm))
         for rel in w:
             pm.record(rel, owner(name), source=f"plugins/{name}/project-files/{rel}")
         written += w
-    written += fetch_templates(pdir, venue, pm, name)
     _upsert_agents(pdir, pm, plugin)
     info = source_info(plugin.dir)
     pm.data["venue"] = venue_block(name, source, ref, info.get("commit", ""), info.get("fetched", ""),

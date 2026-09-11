@@ -3,6 +3,7 @@
 No test ever touches the network: GitHub shorthand is resolved against
 RHARNESS_GITHUB_BASE, which points at a file:// directory of git repositories.
 """
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -35,8 +36,13 @@ def venue_index_repo(tmp_path, names=("testconf2026",)):
     repo = base / "lab" / "venues-repo"
     venues = repo / "venues"
     venues.mkdir(parents=True, exist_ok=True)
+    index = []
     for name in names:
         shutil.copytree(FIXTURES / name, venues / name)
+        meta = json.loads((venues / name / "venue.json").read_text())
+        index.append({"name": name, "venue": name[:-4], "cycle": name[-4:], "primary": "full",
+                      "deadline": meta["deadlines"]["full"], "description": f"fixture {name}"})
+    (venues / "INDEX.json").write_text(json.dumps(index, indent=2) + "\n")
     (repo / "README.md").write_text("venue packages\n")
     git_repo(repo)
     template = base / "lab" / "template-repo"
@@ -57,7 +63,12 @@ def point_workspace_at(ws, index):
 
 
 def make_project(ws, slug="seam"):
-    """Scaffold a project in the workspace and return its directory."""
-    code, out, err = run_cli(["new", slug], cwd=ws)
+    """Scaffold a project in the workspace, commit the scaffold, return its directory."""
+    code, out, err = run_cli(["new", slug, "--title", "Paste boundaries"], cwd=ws)
     assert code == 0, err
-    return Path(ws) / slug
+    project = Path(ws) / slug
+    subprocess.run(["git", "add", "-A"], cwd=str(project), check=True,
+                   capture_output=True, timeout=60)
+    subprocess.run(["git", "commit", "-q", "-m", "scaffold"], cwd=str(project), check=True,
+                   capture_output=True, timeout=60)
+    return project
