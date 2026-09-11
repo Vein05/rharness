@@ -287,9 +287,14 @@ def run_lint(args):
         cfg = load_lint_config(root / "lint.toml" if root else None)
         findings = lint_project(target, cfg, writing_template_region())
     else:
+        from . import venue
         ws = Workspace.open(start=target, override=args.workspace)
         cfg = load_lint_config(ws.root / "lint.toml")
         for pdir in ws.projects():
+            try:
+                venue.refresh_if_stale(ws, pdir, cfg)
+            except Exception:
+                pass  # a refresh problem must never block lint
             findings += lint_project(pdir, cfg, writing_template_region())
         findings += lint_workspace(ws, cfg)
     print(format_json(findings) if args.json else format_findings(findings))

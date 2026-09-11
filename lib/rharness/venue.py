@@ -5,13 +5,15 @@ import io
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
 
-from .manifest import Manifest, today
+from .manifest import Manifest, now_iso, today
+from .paths import rharness_home
 from .plugin import (Plugin, PluginNotFound, capability_summary, clone_at, confirm, fetch_plugin,
                      remote_url, source_info, tree_hash, user_plugins_dir)
 from .regions import remove_region, upsert_region
@@ -23,6 +25,10 @@ from .workspace import PROJECT_MANIFEST_REL
 
 class VenueError(Exception):
     pass
+
+
+TTL_HOURS = 24
+LS_REMOTE_TIMEOUT = 5
 
 
 def owner(name: str) -> str:
@@ -350,6 +356,138 @@ def cmd_add(ws, pdir, tokens, cfg, yes=False, dry_run=False, refresh=False, note
     return 0
 
 
+def is_from_index(block, cfg) -> bool:
+    return bool(block.get("source", "").startswith(cfg["venue_index"])) and not block.get("ref")
+
+
+def _stale(block, now=None) -> bool:
+    try:
+        t = _dt.datetime.fromisoformat(block.get("fetched", ""))
+    except (TypeError, ValueError):
+        return True
+    now = now or _dt.datetime.now(tz=t.tzinfo)
+    return (now - t) >= _dt.timedelta(hours=TTL_HOURS)
+
+
+def _ls_remote_sha(spec: str):
+    remote = remote_url(spec)
+    if remote is None:
+        return None
+    url, ref, _ = remote
+    try:
+        r = subprocess.run(["git", "ls-remote", url, ref or "HEAD"], capture_output=True, text=True,
+                           timeout=LS_REMOTE_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    return r.stdout.split()[0]
+
+
+def _stamp(pdir, block, **fields):
+    block.update(fields)
+    write_block(pdir, block)
+    cache = package_dir(block["name"])
+    info = source_info(cache)
+    info.update({k: v for k, v in fields.items() if k in ("commit", "fetched")})
+    (cache / ".rharness-source.json").write_text(json.dumps(info, indent=2) + "\n")
+
+
+def apply_upstream(ws, pdir, block, new_dir: Path, cfg, allow_code: bool) -> list:
+    """Swap the cached package for new_dir, keeping modified project files as they are."""
+    name = block["name"]
+    cache = package_dir(name)
+    held = False
+    old_checks = (cache / "checks.py").read_text() if (cache / "checks.py").exists() else None
+    new_checks = (new_dir / "checks.py").read_text() if (new_dir / "checks.py").exists() else None
+    if cache.exists():
+        bdir = rharness_home() / "backup" / today() / name
+        if bdir.exists():
+            shutil.rmtree(bdir)
+        bdir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(cache, bdir)
+        shutil.rmtree(cache)
+    shutil.copytree(new_dir, cache)
+    if not allow_code and old_checks != new_checks:
+        held = True
+        if old_checks is None:
+            (cache / "checks.py").unlink()
+        else:
+            (cache / "checks.py").write_text(old_checks)
+    plugin = Plugin(name, cache)
+    venue = load_venue(cache)
+    pm = load_pm(pdir)
+    replaced = []
+    ctx = _project_ctx(ws, pdir, pm)
+    from .templates import render
+    for rel in pm.files_owned_by(owner(name)):
+        e = pm.entry(rel)
+        if not e.get("source"):
+            continue
+        src = plugin.project_files_dir / e["source"].split("/project-files/", 1)[1]
+        if src.exists() and pm.is_unmodified(rel):
+            (pdir / rel).write_text(render(src.read_text(), ctx))
+            pm.record(rel, owner(name), source=e["source"])
+            replaced.append(rel)
+    old_tpl = block.get("template")
+    if venue.get("template") != old_tpl:
+        for rel in [r for r in pm.files_owned_by(owner(name)) if not pm.entry(r).get("source")]:
+            if pm.is_unmodified(rel):
+                (pdir / rel).unlink(missing_ok=True)
+                pm.forget(rel)
+        replaced += fetch_templates(pdir, venue, pm, name)
+    _upsert_agents(pdir, pm, plugin)
+    pm.save()
+    info = source_info(cache)
+    _stamp(pdir, read_block(pdir), commit=info.get("commit", block.get("commit", "")),
+           fetched=info.get("fetched", now_iso()), tree=tree_hash(cache), template=venue.get("template"))
+    block["held"] = held
+    return replaced
+
+
+def refresh_if_stale(ws, pdir, cfg, force=False, now=None) -> dict:
+    """Bring the cached venue package up to date when the TTL has passed. Never raises for network trouble."""
+    block = read_block(pdir)
+    if not block:
+        return {"status": "none", "detail": "no venue"}
+    if block.get("ref") and not force:
+        return {"status": "pinned", "detail": f"pinned to {block['ref']}; `rharness venue update` re-fetches that ref"}
+    if not force and not _stale(block, now=now):
+        return {"status": "fresh", "detail": "fetched within 24h"}
+    spec = block["source"]
+    if not force:
+        tip = _ls_remote_sha(spec)
+        if tip is None:
+            return {"status": "offline", "detail": "upstream not reachable"}
+        if tip == block.get("commit"):
+            _stamp(pdir, block, fetched=now_iso())
+            return {"status": "unchanged", "detail": "upstream tip equals the cached commit"}
+    tmp = Path(tempfile.mkdtemp(prefix="rharness-venue-"))
+    try:
+        try:
+            new_dir = fetch_plugin(spec, dest_root=tmp)
+        except (PluginNotFound, OSError):
+            return {"status": "offline", "detail": "upstream not reachable"}
+        new_tree = tree_hash(new_dir)
+        new_info = source_info(new_dir)
+        if new_tree == block.get("tree"):
+            _stamp(pdir, block, fetched=now_iso(), commit=new_info.get("commit", block.get("commit", "")))
+            return {"status": "unchanged", "detail": "package content unchanged"}
+        locked = block.get("state") == "locked"
+        from_index = is_from_index(block, cfg)
+        if locked and not force:
+            return {"status": "available", "detail": "update available; locked venues update only with `rharness venue update`"}
+        replaced = apply_upstream(ws, pdir, block, new_dir, cfg, allow_code=(from_index or force))
+        if block.get("held"):
+            return {"status": "code-held",
+                    "detail": "metadata updated; checks.py changed upstream and waits for `rharness venue update`",
+                    "replaced": replaced}
+        return {"status": "updated", "detail": f"package updated to {new_info.get('commit', '')[:12]}",
+                "replaced": replaced}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _age_days(iso: str) -> int:
     try:
         t = _dt.datetime.fromisoformat(iso)
@@ -377,6 +515,8 @@ def cmd_status(ws, pdir, cfg, env=None):
     if not block:
         print(f"No venue on {pdir.name}. Attach one with `rharness venue add <venue> <year>`; `rharness venue list` shows the index.")
         return 0
+    r = refresh_if_stale(ws, pdir, cfg)
+    block = read_block(pdir) or block
     try:
         venue = load_venue(package_dir(block["name"]))
     except VenueError as e:
@@ -384,6 +524,8 @@ def cmd_status(ws, pdir, cfg, env=None):
         return 1
     for l in status_lines(pdir, block, venue):
         print(l)
+    detail = "update available (run rharness venue update)" if r["status"] == "available" else r["detail"]
+    print(f"  upstream: {detail}")
     findings = venuecheck.lint_findings(pdir, env=env)
     print("Checks:")
     if not findings:
@@ -463,17 +605,119 @@ def cmd_remove(ws, pdir, cfg, yes=False, dry_run=False):
     return 0
 
 
-def cmd_list(ws, cfg):
-    raise VenueError("venue list is not implemented yet")
+def cmd_update(ws, pdir, cfg, yes=False):
+    block = read_block(pdir)
+    if not block:
+        print(f"rharness: {pdir.name} has no venue", file=sys.stderr)
+        return 1
+    if not is_from_index(block, cfg):
+        # foreign source: a changed checks.py needs consent
+        tmp = Path(tempfile.mkdtemp(prefix="rharness-venue-"))
+        try:
+            try:
+                new_dir = fetch_plugin(block["source"], dest_root=tmp)
+            except PluginNotFound as e:
+                print(f"rharness: cannot fetch {block['source']}: {e}", file=sys.stderr)
+                return 2
+            cache = package_dir(block["name"])
+            old = (cache / "checks.py").read_text() if (cache / "checks.py").exists() else None
+            new = (new_dir / "checks.py").read_text() if (new_dir / "checks.py").exists() else None
+            if old != new and not yes:
+                print(f"checks.py changed upstream for {block['name']} ({block['source']}); it runs in-process during lint.")
+                print(capability_summary(Plugin(new_dir.name, new_dir), ws))
+                print("Re-run with --yes (before the subcommand) to accept: `rharness --yes venue update`")
+                return 1
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    r = refresh_if_stale(ws, pdir, cfg, force=True)
+    print(f"{block['name']}: {r['status']}; {r['detail']}")
+    for rel in r.get("replaced", []):
+        print(f"  replaced {rel}")
+    return 0 if r["status"] in ("updated", "unchanged", "code-held") else 1
 
 
 def cmd_change(ws, pdir, tokens, cfg, yes=False, dry_run=False):
-    raise VenueError("venue change is not implemented yet")
+    block = read_block(pdir)
+    if not block:
+        print(f"rharness: {pdir.name} has no venue; use `rharness venue add`", file=sys.stderr)
+        return 1
+    spec, hint, from_index, ref = resolve_source(tokens, cfg)
+    if hint == block["name"]:
+        print(f"{pdir.name} already targets {hint}")
+        return 0
+    pm = load_pm(pdir)
+    files = pm.files_owned_by(owner(block["name"]))
+    lines = [f"Change venue on {pdir.name}: {block['name']} -> {hint}" +
+             (f" (locked since {block['locked_on']})" if block.get("state") == "locked" else "")]
+    lines += [f"  would remove {r} (kept if modified)" for r in files]
+    lines.append("  would install the new package's files, AGENTS.md section, deadlines, and checks; state resets to targeted")
+    if dry_run:
+        for l in lines:
+            print(l)
+        return 0
+    if not confirm_or_refuse(lines, yes, "change"):
+        return 1
+    old = block["name"]
+    removed, kept = remove_package(ws, pdir, old, note=None)
+    for k in kept:
+        print(f"  kept {k} (modified; now untracked)")
+    return cmd_add(ws, pdir, tokens, cfg, yes=yes, note=f"venue changed from {old} to {hint}")
+
+
+def fetch_index(cfg, force=False):
+    """(entries, fetched_iso, cached) for the configured venue index, cached under rharness_home().
+
+    `cached` is True when the entries come from the cache because upstream was not fetched in
+    this call: either the cache is still inside the TTL, or the fetch failed.
+    """
+    cache_dir = rharness_home() / "venues"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    idx, meta = cache_dir / "INDEX.json", cache_dir / "INDEX.meta.json"
+    fetched = None
+    if meta.exists():
+        try:
+            fetched = json.loads(meta.read_text()).get("fetched")
+        except json.JSONDecodeError:
+            fetched = None
+    fresh = fetched is not None and not _stale({"fetched": fetched})
+    if idx.exists() and fresh and not force:
+        return json.loads(idx.read_text()), fetched, True
+    remote = remote_url(cfg["venue_index"])
+    if remote is not None:
+        url, ref, subdir = remote
+        tmp = Path(tempfile.mkdtemp(prefix="rharness-index-"))
+        try:
+            try:
+                clone_at(url, ref, tmp / "repo")
+                src = (tmp / "repo" / subdir if subdir else tmp / "repo") / "INDEX.json"
+                if src.exists():
+                    idx.write_text(src.read_text())
+                    fetched = now_iso()
+                    meta.write_text(json.dumps({"fetched": fetched}) + "\n")
+                    return json.loads(idx.read_text()), fetched, False
+            except (PluginNotFound, OSError, json.JSONDecodeError):
+                pass
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    if idx.exists():
+        return json.loads(idx.read_text()), fetched, True
+    return [], None, True
+
+
+def cmd_list(ws, cfg):
+    entries, fetched, cached = fetch_index(cfg)
+    if not entries:
+        print(f"rharness: no venue index reachable at {cfg['venue_index']} and nothing cached", file=sys.stderr)
+        return 2
+    head = f"Venues in {cfg['venue_index']}"
+    if cached:
+        head += f" (cached {fetched or 'unknown'}; upstream not fetched)"
+    print(head)
+    for e in sorted(entries, key=lambda x: x.get("deadline", "")):
+        print(f"  {e.get('name', ''):14s} {e.get('primary', ''):9s} {e.get('deadline', '')[:10]:10s}  {e.get('description', '')}")
+    return 0
 
 
 def cmd_check(ws, pdir, cfg, build=False):
     raise VenueError("venue check is not implemented yet")
 
-
-def cmd_update(ws, pdir, cfg, yes=False):
-    raise VenueError("venue update is not implemented yet")
