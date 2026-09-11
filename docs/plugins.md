@@ -103,6 +103,15 @@ my-plugin/
 | `requires.env` | environment variable names the plugin needs; reported after install, values never read |
 | `requires.python` | informational |
 
+### Project-scoped plugins
+
+`plugin.json` may set `"scope": "project"` and `"kind": "venue"`. Such a
+plugin installs into one project via `rharness venue add`, never through
+`rharness add`, which refuses it with exit 2. `files/` and `claude/` are
+ignored for a project-scoped plugin; only its `project-files/` and its
+`agents.md` region go into the project. `venues/README.md` documents the
+venue kind.
+
 Optional files:
 
 - `claude/hooks.json`: `{"PreToolUse": [{"matcher": "Bash", "hooks": [...]}]}`,

@@ -655,3 +655,7 @@ needed, and `doctor` says so instead of insisting on TinyTeX.
   `export-ignore`; `INDEX.json` is cached; section 4 gains `hash` and
   section 7 the provenance, scoring, and spec-before-code rows that shipped
   in 0.2.0 but were missing here; `apply` renamed to `update --no-fetch`.
+- 2026-09-10: implementation plan `docs/superpowers/plans/2026-09-10-venues.md`
+  executes sections 10 to 12. Deviation recorded during implementation:
+  `--project` is accepted before or after the subcommand
+  (`rharness venue --project seam lock` and `rharness venue lock --project seam`).

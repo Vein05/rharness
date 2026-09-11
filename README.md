@@ -172,6 +172,39 @@ ok   rtk binary on PATH: /opt/homebrew/bin/rtk
 ok   rtk hook registered: /Users/you/research/.claude/settings.json
 ```
 
+## Venues
+
+Attach the submission target to a project. The package comes from
+`venues/<name>/` in this repository, fetched on demand and refreshed when
+older than a day, so deadlines and style files do not go stale in a release.
+
+```sh
+cd ~/research/seam
+rharness venue add iclr 2027
+rharness venue              # status: deadlines, package age, venue checks
+rharness venue lock         # when the paper is committed to this venue
+rharness venue change aaai 2027
+```
+
+`venue add` installs the venue's style files into `paper/`, a prefilled
+so-what playbook into `research/`, a section into the project's `AGENTS.md`,
+and records the target in `CHARTER.md`'s revision notes. From then on
+`rharness lint` runs the venue checks: main-body page count, required
+sections, citation keys, style loaded, and an anonymity scan for git author
+names, the git remote, `\author`, `\thanks`, and acknowledgements. Until
+`venue lock`, every venue finding is a warning; after it, findings keep
+their severity and lint warns when the deadline is close and the charter's
+success criterion is still `NOT YET`.
+
+The page check reads `paper/main.pdf`. Build it with `rharness paper build`
+(with [TinyTeX](https://yihui.org/tinytex/) installed, missing packages are
+pulled through `tlmgr`), or download the compiled PDF from Overleaf into
+`paper/main.pdf`. Neither poppler nor TeX is required to read it.
+
+Off a TTY, `change`, `unlock`, and `remove` refuse without `--yes` and say so
+in words an agent can relay. From the workspace root, pass `--project <slug>`.
+Venue packages are documented in `venues/README.md`.
+
 ## Already have a research folder?
 
 `adopt` adds what is missing and never overwrites what exists. Your files
@@ -246,6 +279,8 @@ rharness owns only the text between `<!-- rharness:begin ... -->` and
 | `rharness list` | Plugins with origin, install status, and source |
 | `rharness plugin new <name> [--dir D]` | Scaffold a plugin directory |
 | `rharness lint [dir] [--json]` | Check projects against the rules; exit 1 on findings |
+| `rharness venue add\|change\|lock\|unlock\|check\|update\|remove\|list [--project P]` | Attach, inspect, or detach a project's submission target |
+| `rharness paper build` | Build `paper/main.pdf` with latexmk |
 | `rharness doctor` | Check python, git, git-lfs, rtk, and hook registration |
 | `rharness update [--no-fetch] [--force]` | Fetch the latest release, verify it against `SHA256SUMS`, re-apply managed files |
 | `rharness session-check` | Behind the Claude Code Stop hook: today's work needs today's handoff and changelog |
