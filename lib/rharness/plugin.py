@@ -80,17 +80,28 @@ def remote_url(spec: str):
 
 
 def clone_at(url: str, ref, dest: Path) -> str:
-    """Shallow clone at a branch or tag, else full clone and checkout a commit. Returns HEAD sha."""
+    """Shallow clone at a branch or tag, else full clone and checkout a commit. Returns HEAD sha.
+
+    dest must not already exist: the fallback removes whatever the first clone left there.
+    """
+    existed = Path(dest).exists()
+    step = "clone"
     args = ["git", "clone", "-q", "--depth", "1"] + (["--branch", ref] if ref else []) + [url, str(dest)]
     r = subprocess.run(args, capture_output=True, text=True, timeout=120)
     if r.returncode != 0 and ref:
-        shutil.rmtree(dest, ignore_errors=True)
+        if not existed:
+            shutil.rmtree(dest, ignore_errors=True)
         r = subprocess.run(["git", "clone", "-q", url, str(dest)], capture_output=True, text=True, timeout=300)
         if r.returncode == 0:
-            r = subprocess.run(["git", "checkout", "-q", ref], cwd=str(dest), capture_output=True, text=True)
+            step = "checkout"
+            r = subprocess.run(["git", "checkout", "-q", ref], cwd=str(dest),
+                               capture_output=True, text=True, timeout=300)
     if r.returncode != 0:
-        raise PluginNotFound(f"git clone of {url}" + (f"@{ref}" if ref else "") + f" failed: {r.stderr.strip()}")
-    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(dest), capture_output=True, text=True).stdout.strip()
+        what = f"git checkout of {url}@{ref}" if step == "checkout" else \
+               f"git clone of {url}" + (f"@{ref}" if ref else "")
+        raise PluginNotFound(f"{what} failed: {r.stderr.strip()}")
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(dest),
+                          capture_output=True, text=True, timeout=30).stdout.strip()
 
 
 def source_info(plugin_dir: Path) -> dict:
