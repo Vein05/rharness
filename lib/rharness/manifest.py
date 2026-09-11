@@ -17,6 +17,10 @@ def today() -> str:
     return _dt.date.today().isoformat()
 
 
+def now_iso() -> str:
+    return _dt.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
 class Manifest:
     def __init__(self, path: Path, data: dict):
         self.path = Path(path)
