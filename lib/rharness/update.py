@@ -139,15 +139,16 @@ def _apply_manifest(root: Path, m: Manifest, prefix: str, ctx: dict, force: bool
             replaced.append(label)
             continue
         if entry.get("region"):
-            body = get_region(new_text or "", "base")
+            rname = m.region_name(rel) or "base"
+            body = get_region(new_text or "", rname)
             if body is None:
                 continue
             current = target.read_text()
-            updated = upsert_region(current, "base", body)
+            updated = upsert_region(current, rname, body)
             if updated != current:
                 if not dry_run:
                     target.write_text(updated)
-                    m.record(rel, entry["owner"], source=entry["source"], region=True)
+                    m.record(rel, entry["owner"], source=entry["source"], region=entry["region"])
                 replaced.append(label)
             continue
         if new_text is None:

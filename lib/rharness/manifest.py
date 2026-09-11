@@ -95,9 +95,26 @@ class Manifest:
         entry = {"sha256": sha256_file(self.root / rel), "owner": owner}
         if source:
             entry["source"] = source
-        if region:
+        if region is True:
             entry["region"] = True
+        elif isinstance(region, str) and region:
+            entry["region"] = region
         self.files[rel] = entry
+
+    def region_name(self, rel):
+        e = self.entry(rel) or {}
+        r = e.get("region")
+        if r is True:
+            return "base"
+        return r if isinstance(r, str) and r else None
+
+    def rehash(self, rel) -> bool:
+        e = self.entry(rel)
+        p = self.root / rel
+        if not e or not p.exists():
+            return False
+        e["sha256"] = sha256_file(p)
+        return True
 
     def entry(self, rel):
         return self.files.get(rel)
