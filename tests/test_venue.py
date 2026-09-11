@@ -6,7 +6,7 @@ from venue_helpers import venue_index_repo, point_workspace_at, make_project
 
 from rharness import venue as V
 from rharness.manifest import Manifest
-from rharness.plugin import Plugin, fetch_plugin
+from rharness.plugin import Plugin, PluginNotFound, classify_source, fetch_plugin
 from rharness.workspace import Workspace
 
 
@@ -131,3 +131,35 @@ def test_template_refuses_main_tex_and_keeps_files_it_does_not_own(ws, tmp_path,
     assert (p / "paper" / "references.bib").read_text() == before
     assert "kept existing paper/references.bib" in capsys.readouterr().out
     assert pm.entry("paper/references.bib")["owner"] == "base"
+
+
+def test_classify_source_rejects_dot_dot_in_a_repo_subdir():
+    import pytest
+    with pytest.raises(PluginNotFound) as e:
+        classify_source("lab/repo/venues/../x")
+    assert "must not contain '..'" in str(e.value)
+    with pytest.raises(PluginNotFound):
+        classify_source("https://example.invalid/lab/repo.git/../x")
+    assert classify_source("lab/repo/venues/x")[0] == "github"
+
+
+def test_is_from_index_requires_exactly_one_segment_under_the_index():
+    cfg = {"venue_index": "lab/venues-repo/venues"}
+    assert V.is_from_index({"source": "lab/venues-repo/venues/testconf2026", "ref": None}, cfg)
+    assert not V.is_from_index({"source": "lab/venues-repo/venues/x/../testconf2026", "ref": None}, cfg)
+    assert not V.is_from_index({"source": "lab/venues-repo/venues/a/b", "ref": None}, cfg)
+    assert not V.is_from_index({"source": "lab/venues-repo/venues/testconf2026", "ref": "v1"}, cfg)
+
+
+def test_resolve_source_full_spec_outside_the_index_is_not_trusted():
+    cfg = {"venue_index": "lab/venues-repo/venues"}
+    assert V.resolve_source(["lab/venues-repo/venues/testconf2026"], cfg)[2] is True
+    assert V.resolve_source(["lab/venues-repo/venues/../testconf2026"], cfg)[2] is False
+
+
+def test_template_url_scheme_is_restricted():
+    import pytest
+    with pytest.raises(V.VenueError) as e:
+        V.template_blobs({"url": "http://example.invalid/t.zip", "sha256": "0" * 64,
+                          "extract": ["t.sty"]})
+    assert "https://" in str(e.value)

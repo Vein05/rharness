@@ -162,6 +162,8 @@ def template_blobs(tpl: dict) -> dict:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     else:
+        if not str(tpl.get("url", "")).startswith(("https://", "file://")):
+            raise VenueError(f"template.url must use https:// or file:// (got {tpl.get('url')!r})")
         try:
             with urllib.request.urlopen(tpl["url"], timeout=60) as r:
                 data = r.read()
@@ -280,11 +282,27 @@ AGENT_SENTENCE = ("If you are an agent, confirm with the user before re-running 
 TINYTEX = 'wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh'
 
 
+INDEX_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def _under_index(base: str, cfg) -> bool:
+    """True when base is exactly <venue_index>/<one plain name>.
+
+    A prefix match alone is not enough: `<index>/../evil` also starts with the index
+    and would otherwise be treated as index-trusted, so its checks.py would run
+    without the confirmation a foreign source needs.
+    """
+    prefix = cfg["venue_index"].rstrip("/") + "/"
+    if not base.startswith(prefix):
+        return False
+    return INDEX_NAME_RE.match(base[len(prefix):].rstrip("/")) is not None
+
+
 def resolve_source(tokens, cfg):
     """(spec, name_hint, from_index, ref). Bare names resolve against cfg['venue_index']."""
     if len(tokens) == 1 and is_source_spec(tokens[0]):
         base, ref = split_pin(tokens[0])
-        from_index = base.startswith(cfg["venue_index"].rstrip("/") + "/") and ref is None
+        from_index = _under_index(base, cfg) and ref is None
         return tokens[0], base.rstrip("/").rsplit("/", 1)[-1], from_index, ref
     name = normalize_name(tokens)
     if not name:
@@ -296,14 +314,25 @@ def fetch_package(spec: str, name_hint: str, refresh: bool = False) -> Plugin:
     cache = package_dir(name_hint)
     if not refresh and (cache / "plugin.json").exists() and source_info(cache).get("spec") == spec:
         plugin = Plugin(name_hint, cache)
+        fetched = None
     else:
         try:
             d = fetch_plugin(spec)
         except PluginNotFound as e:
             raise VenueError(f"no venue package at {spec}: {e}")
         plugin = Plugin(d.name, d)
-    if plugin.scope != "project" or plugin.kind != "venue":
-        raise VenueError(f"{plugin.name} is not a venue package (plugin.json needs scope=project and kind=venue)")
+        fetched = d
+    try:
+        if plugin.scope != "project" or plugin.kind != "venue":
+            raise VenueError(f"{plugin.name} is not a venue package (plugin.json needs scope=project and kind=venue)")
+        if plugin.name != name_hint:
+            # fetch_plugin caches under the name the package declares, so a package that
+            # claims someone else's name would otherwise overwrite that package's cache
+            raise VenueError(f"{spec} declares name {plugin.name!r}, not {name_hint!r}")
+    except VenueError:
+        if fetched is not None:
+            shutil.rmtree(fetched, ignore_errors=True)
+        raise
     return plugin
 
 
@@ -356,6 +385,10 @@ def cmd_add(ws, pdir, tokens, cfg, yes=False, dry_run=False, refresh=False, note
     print("  These findings are expected to be open until the agent acts on them:")
     if stem:
         print(f"    add \\usepackage{{{stem}}} at the % rharness:venue-style line in paper/main.tex")
+        main = Path(pdir) / "paper" / "main.tex"
+        if main.exists() and "% rharness:venue-style" not in main.read_text(errors="replace"):
+            print("    (paper/main.tex has no % rharness:venue-style marker; add the "
+                  "\\usepackage line to the preamble yourself)")
     print("    build paper/main.pdf (`rharness paper build`) or download it from Overleaf into paper/main.pdf")
     for l in _engine_hint():
         print(l)
@@ -364,7 +397,7 @@ def cmd_add(ws, pdir, tokens, cfg, yes=False, dry_run=False, refresh=False, note
 
 
 def is_from_index(block, cfg) -> bool:
-    return bool(block.get("source", "").startswith(cfg["venue_index"].rstrip("/") + "/")) and not block.get("ref")
+    return _under_index(block.get("source", ""), cfg) and not block.get("ref")
 
 
 def _stale(block, now=None) -> bool:
@@ -407,6 +440,11 @@ def apply_upstream(ws, pdir, block, new_dir: Path, cfg, allow_code: bool) -> lis
     held = False
     old_checks = (cache / "checks.py").read_text() if (cache / "checks.py").exists() else None
     new_checks = (new_dir / "checks.py").read_text() if (new_dir / "checks.py").exists() else None
+    new_venue = load_venue(new_dir)
+    old_tpl = block.get("template")
+    # fetch the new template first: a failure here must leave both the cache and the
+    # project files on the old venue, so the next refresh retries from a consistent state
+    blobs = template_blobs(new_venue.get("template")) if new_venue.get("template") != old_tpl else None
     if cache.exists():
         bdir = rharness_home() / "backup" / today() / name
         if bdir.exists():
@@ -436,10 +474,7 @@ def apply_upstream(ws, pdir, block, new_dir: Path, cfg, allow_code: bool) -> lis
             (pdir / rel).write_text(render(src.read_text(), ctx))
             pm.record(rel, owner(name), source=e["source"])
             replaced.append(rel)
-    old_tpl = block.get("template")
     if venue.get("template") != old_tpl:
-        # fetch first: a failure here must not leave the old template files deleted
-        blobs = template_blobs(venue.get("template"))
         for rel in [r for r in pm.files_owned_by(owner(name)) if not pm.entry(r).get("source")]:
             if pm.is_unmodified(rel):
                 (pdir / rel).unlink(missing_ok=True)
@@ -449,7 +484,8 @@ def apply_upstream(ws, pdir, block, new_dir: Path, cfg, allow_code: bool) -> lis
     pm.save()
     info = source_info(cache)
     _stamp(pdir, read_block(pdir), commit=info.get("commit", block.get("commit", "")),
-           fetched=info.get("fetched", now_iso()), tree=tree_hash(cache), template=venue.get("template"))
+           fetched=info.get("fetched", now_iso()), tree=tree_hash(cache), template=venue.get("template"),
+           held=held)
     block["held"] = held
     return replaced
 
@@ -522,6 +558,8 @@ def status_lines(pdir, block, venue, now=None):
         out.append(f"  {key} deadline {iso} {when}" + (" (primary)" if key == pk else ""))
     out.append(f"  package commit {block.get('commit', '')[:12]} fetched {block.get('fetched', '?')} "
                f"({_age_days(block.get('fetched', ''))} days old)" + (f", pinned to {block['ref']}" if block.get("ref") else ""))
+    if block.get("held"):
+        out.append("  checks.py changed upstream and is held; run rharness venue update to accept it")
     return out
 
 
@@ -674,13 +712,22 @@ def cmd_change(ws, pdir, tokens, cfg, yes=False, dry_run=False):
         for l in lines:
             print(l)
         return 0
+    # fetch and validate the new package before removing the old one: a typo or a
+    # refused source must leave the project on the venue it already had
+    plugin = fetch_package(spec, hint)
+    load_venue(plugin.dir)
+    if not from_index and not yes:
+        print(capability_summary(plugin, ws))
+        print(f"  checks.py: {'yes, runs in-process during lint' if (plugin.dir / 'checks.py').exists() else 'no'}")
+        print("Not changed. Re-run with --yes (before the subcommand) to accept this source.")
+        return 1
     if not confirm_or_refuse(lines, yes, "change"):
         return 1
     old = block["name"]
     removed, kept = remove_package(ws, pdir, old, note=None)
     for k in kept:
         print(f"  kept {k} (modified; now untracked)")
-    return cmd_add(ws, pdir, tokens, cfg, yes=yes, note=f"venue changed from {old} to {hint}")
+    return cmd_add(ws, pdir, tokens, cfg, yes=True, note=f"venue changed from {old} to {hint}")
 
 
 def _cached_index(idx: Path, fetched):

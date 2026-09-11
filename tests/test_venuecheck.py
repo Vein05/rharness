@@ -188,3 +188,15 @@ def test_missing_package_dir_is_one_warning(venue_project):
     shutil.rmtree(d)
     msgs = _msgs(VC.lint_findings(p))
     assert len(msgs) == 1 and "venue update" in msgs[0]
+
+
+def test_style_message_wording_follows_the_marker(tmp_path):
+    venue = {"template": {"files": ["testconf2026.sty"]}}
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "main.tex").write_text("\\documentclass{article}\n% rharness:venue-style\n")
+    msg = VC._check_style(tmp_path, venue, "\\documentclass{article}\n")[0][2]
+    assert "% rharness:venue-style line" in msg
+    (paper / "main.tex").write_text("\\documentclass{article}\n")
+    msg = VC._check_style(tmp_path, venue, "\\documentclass{article}\n")[0][2]
+    assert "in the preamble" in msg and "rharness:venue-style" not in msg

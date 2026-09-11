@@ -107,3 +107,11 @@ def test_scaffold_has_marker_makefile_prereqs_and_gitignore(ws):
     mk = (p / "paper" / "Makefile").read_text()
     assert "$(wildcard *.sty)" in mk and "$(wildcard *.cls)" in mk
     assert "paper/main.pdf" in (p / ".gitignore").read_text()
+
+
+def test_tlmgr_package_name_is_validated(tmp_path):
+    b = tmp_path / "evilbin"; b.mkdir()
+    _fake(b, "tlmgr", 'printf -- "--evil:\\n\\ttexmf-dist/tex/latex/x/foo.sty\\n"\nexit 0\n')
+    assert paper.tlmgr_package_for("foo.sty", env={"PATH": str(b)}) is None
+    _fake(b, "tlmgr", 'printf "foopkg:\\n\\ttexmf-dist/tex/latex/x/foo.sty\\n"\nexit 0\n')
+    assert paper.tlmgr_package_for("foo.sty", env={"PATH": str(b)}) == "foopkg"

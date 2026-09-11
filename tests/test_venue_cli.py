@@ -1,8 +1,11 @@
 import json
+import shutil
 import subprocess
 
 from conftest import run_cli
 from venue_helpers import venue_index_repo, point_workspace_at, make_project
+
+from rharness import venue as V
 
 
 def _setup(ws, tmp_path):
@@ -120,3 +123,92 @@ def test_add_by_full_index_spec_needs_no_confirmation(ws, tmp_path, home):
     assert code == 0, err
     assert "Installed venue testconf2026" in out
     assert (p / "paper" / "testconf2026.sty").exists()
+
+
+def _commit(repo, msg="fixture change"):
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", msg], cwd=repo, check=True, capture_output=True)
+
+
+def _second_venue(repo, name="otherconf2027"):
+    """Copy the fixture into the index under a new, self-consistent name."""
+    src, dst = repo / "venues" / "testconf2026", repo / "venues" / name
+    shutil.copytree(src, dst)
+    vj = json.loads((dst / "venue.json").read_text())
+    vj.update(venue=name[:-4], cycle=name[-4:], name=name)
+    vj["template"]["files"] = ["testconf2026.sty"]
+    (dst / "venue.json").write_text(json.dumps(vj) + "\n")
+    pj = json.loads((dst / "plugin.json").read_text())
+    pj["name"] = name
+    (dst / "plugin.json").write_text(json.dumps(pj) + "\n")
+    _commit(repo, "second venue")
+    return name
+
+
+def test_index_relative_escape_is_refused(ws, tmp_path, home):
+    """C1: <index>/../name escapes the index; it must be rejected, not silently trusted."""
+    env, index, repo, p = _setup(ws, tmp_path)
+    # a real package outside the index directory, reachable only through ..
+    shutil.copytree(repo / "venues" / "testconf2026", repo / "testconf2026")
+    _commit(repo, "package outside the index")
+    code, out, err = run_cli(["venue", "add", f"{index}/../testconf2026"], cwd=p, env=env)
+    assert code == 2, (code, out, err)
+    assert "must not contain '..'" in err
+    assert V.read_block(p) is None
+    assert not (p / "paper" / "testconf2026.sty").exists()
+    assert not (home / ".rharness" / "plugins" / "testconf2026").exists()
+
+
+def test_add_refuses_a_package_that_declares_another_name(ws, tmp_path, home):
+    """C2: a package at <index>/impostor2026 declaring testconf2026 must not be cached as it."""
+    env, index, repo, p = _setup(ws, tmp_path)
+    shutil.copytree(repo / "venues" / "testconf2026", repo / "venues" / "impostor2026")
+    _commit(repo, "impostor")
+    legit = home / ".rharness" / "plugins" / "testconf2026"
+    assert not legit.exists()
+    code, out, err = run_cli(["venue", "add", "impostor2026"], cwd=p, env=env)
+    assert code == 2, (code, out, err)
+    assert "impostor2026" in err and "testconf2026" in err
+    assert not legit.exists()
+    assert V.read_block(p) is None
+
+
+def test_change_to_an_unknown_venue_keeps_the_old_one(ws, tmp_path, home):
+    """C3: a failed change must not leave the project venue-less."""
+    env, index, repo, p = _setup(ws, tmp_path)
+    code, out, err = run_cli(["venue", "add", "testconf2026"], cwd=p, env=env)
+    assert code == 0, err
+    code, out, err = run_cli(["--yes", "venue", "change", "nosuch", "2030"], cwd=p, env=env)
+    assert code == 2, (code, out, err)
+    assert "nosuch2030" in err
+    assert V.read_block(p)["name"] == "testconf2026"
+    assert (p / "paper" / "testconf2026.sty").exists()
+    row = next(l for l in (ws / "AGENTS.md").read_text().splitlines() if l.startswith("| `seam/` |"))
+    assert "testconf2026" in row.split("|")[3]
+    assert "venue changed from" not in (p / "CHARTER.md").read_text()
+
+
+def test_change_to_a_non_index_source_without_yes_keeps_the_old_one(ws, tmp_path, home):
+    """C3: consent for foreign code is asked before anything is removed."""
+    env, index, repo, p = _setup(ws, tmp_path)
+    other = _second_venue(repo)
+    code, out, err = run_cli(["venue", "add", "testconf2026"], cwd=p, env=env)
+    assert code == 0, err
+    (ws / "lint.toml").write_text('venue_index = "other/place/venues"\n')
+    code, out, err = run_cli(["venue", "change", f"{index}/{other}"], cwd=p, env=env)
+    assert code == 1, (code, out, err)
+    assert "checks.py" in out and "--yes" in out
+    assert V.read_block(p)["name"] == "testconf2026"
+    assert (p / "paper" / "testconf2026.sty").exists()
+
+
+def test_add_without_the_style_marker_says_so(ws, tmp_path, home):
+    """I4: upgraded projects have no % rharness:venue-style line."""
+    env, index, repo, p = _setup(ws, tmp_path)
+    main = p / "paper" / "main.tex"
+    main.write_text("\n".join(l for l in main.read_text().splitlines()
+                              if "rharness:venue-style" not in l) + "\n")
+    code, out, err = run_cli(["venue", "add", "testconf2026"], cwd=p, env=env)
+    assert code == 0, err
+    assert "no % rharness:venue-style marker" in out
+    assert "add the \\usepackage line to the preamble yourself" in out

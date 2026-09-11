@@ -3,10 +3,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from rharness.venuemeta import validate
 
 REPO = Path(__file__).resolve().parents[1]
 VENUES = REPO / "venues"
+
+pytestmark = pytest.mark.skipif(not VENUES.is_dir(),
+                                reason="venues/ is export-ignored from the release tarball")
 
 
 def _packages():

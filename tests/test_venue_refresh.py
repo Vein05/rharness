@@ -92,11 +92,17 @@ def test_non_index_source_holds_code_until_update(ws, tmp_path, home, monkeypatc
     assert r["status"] == "code-held", r
     assert json.loads((V.package_dir("testconf2026") / "venue.json").read_text())["page_limit"]["main"] == 3
     assert "v2 check" not in (V.package_dir("testconf2026") / "checks.py").read_text()
+    # the hold is persisted, so status keeps reporting it until update accepts the code
+    assert V.read_block(p)["held"] is True
+    code, out, err = run_cli(["venue"], cwd=p, env=env)
+    assert "held" in out, out
+    assert V.read_block(p)["held"] is True
     code, out, err = run_cli(["venue", "update"], cwd=p, env=env)
     assert code == 1 and "checks.py" in out and "--yes" in out
     code, out, err = run_cli(["--yes", "venue", "update"], cwd=p, env=env)
     assert code == 0, err
     assert "v2 check" in (V.package_dir("testconf2026") / "checks.py").read_text()
+    assert V.read_block(p)["held"] is False
 
 
 def test_pinned_never_refreshes(ws, tmp_path, home, monkeypatch):
@@ -181,6 +187,7 @@ def test_unfetchable_new_template_leaves_the_old_one_in_place(ws, tmp_path, home
     vj = repo / "venues" / "testconf2026" / "venue.json"
     d = json.loads(vj.read_text())
     d["template"]["files"] = ["no-such-file.sty"]
+    d["page_limit"]["main"] = 3
     vj.write_text(json.dumps(d, indent=2) + "\n")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "broken template"], cwd=repo, check=True)
@@ -190,3 +197,5 @@ def test_unfetchable_new_template_leaves_the_old_one_in_place(ws, tmp_path, home
     assert (p / "paper" / "testconf2026.sty").read_text() == before
     pm = json.loads((p / ".rharness" / "project.json").read_text())
     assert "paper/testconf2026.sty" in pm["files"]
+    # the cache is untouched too: block and cache stay on the same, old venue
+    assert json.loads((V.package_dir("testconf2026") / "venue.json").read_text())["page_limit"]["main"] == 2

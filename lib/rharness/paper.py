@@ -8,6 +8,8 @@ from pathlib import Path
 from .venue import TINYTEX
 
 MISSING_RE = re.compile(r"! LaTeX Error: File `([^']+)' not found|! I can't find file `([^']+)'")
+# tlmgr output becomes argv for `tlmgr install`, so only plain package names are accepted
+PKG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 TAIL = 40
 
 
@@ -48,7 +50,8 @@ def tlmgr_package_for(filename: str, env=None):
     for line in r.stdout.splitlines():
         line = line.rstrip()
         if line.endswith(":") and not line.startswith(("\t", " ")):
-            return line[:-1].strip()
+            name = line[:-1].strip()
+            return name if PKG_NAME_RE.match(name) else None
     return None
 
 

@@ -50,15 +50,31 @@ def split_ref(spec: str):
     return spec, None
 
 
+def _no_escape(spec: str, path):
+    """Refuse a remote path that leaves the directory it names (or is absolute).
+
+    `repo_dir / subdir` is not normalised anywhere downstream, so a `..` segment would
+    hand back a directory outside the one the source spec appears to point at.
+    """
+    if not path:
+        return
+    if path.startswith("/") or ".." in path.split("/"):
+        raise PluginNotFound(f"{spec}: a remote plugin path must not contain '..' "
+                             f"or start with '/' (got {path!r})")
+
+
 def classify_source(spec: str):
     """Return (kind, payload): builtin | path | git | github. payload carries the ref for git kinds."""
     base, ref = split_ref(spec)
     if base.startswith(("./", "../", "/", "~")) or ("/" in base and (Path(base) / "plugin.json").exists()):
         return "path", str(Path(base).expanduser().resolve())
     if base.startswith(("http://", "https://", "git@", "ssh://", "file://")) or base.endswith(".git"):
+        if ".." in base.split("/"):
+            raise PluginNotFound(f"{spec}: a remote plugin path must not contain '..'")
         return "git", (base, ref)
     m = GITHUB_RE.match(base)
     if m and "/" in base:
+        _no_escape(spec, m.group(3))
         return "github", (m.group(1), m.group(2), m.group(3), ref)
     return "builtin", spec
 

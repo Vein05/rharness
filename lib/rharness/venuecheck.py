@@ -97,8 +97,11 @@ def _check_style(pdir, venue, tex):
     pat = re.compile(r"\\(usepackage|documentclass)(\[[^\]]*\])?\{[^}]*\b" + re.escape(stem) + r"\b[^}]*\}")
     if pat.search(tex):
         return []
+    main = Path(pdir) / "paper" / "main.tex"
+    marker = main.exists() and "% rharness:venue-style" in main.read_text(errors="replace")
+    where = "at the % rharness:venue-style line" if marker else "in the preamble"
     return [("error", "paper/main.tex",
-             f"main.tex does not load {stem}; add \\usepackage{{{stem}}} at the % rharness:venue-style line")]
+             f"main.tex does not load {stem}; add \\usepackage{{{stem}}} {where}")]
 
 
 def _check_sections(venue, tex):

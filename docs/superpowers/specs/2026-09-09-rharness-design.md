@@ -659,3 +659,7 @@ needed, and `doctor` says so instead of insisting on TinyTeX.
   executes sections 10 to 12. Deviation recorded during implementation:
   `--project` is accepted before or after the subcommand
   (`rharness venue --project seam lock` and `rharness venue lock --project seam`).
+- 2026-09-10: section 10.9 says the workspace brief table reads "from the venue
+  block only"; the block holds no deadlines, so the table reads deadlines from
+  the cached venue.json and never scans a PDF or touches the network, which is
+  the sentence's intent.
