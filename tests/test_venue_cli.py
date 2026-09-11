@@ -173,6 +173,26 @@ def test_add_refuses_a_package_that_declares_another_name(ws, tmp_path, home):
     assert V.read_block(p) is None
 
 
+def test_impostor_does_not_clobber_an_existing_cache(ws, tmp_path, home):
+    """C2: nothing reaches ~/.rharness/plugins until the package has passed validation."""
+    from rharness.plugin import tree_hash
+    env, index, repo, p = _setup(ws, tmp_path)
+    code, out, err = run_cli(["venue", "add", "testconf2026"], cwd=p, env=env)
+    assert code == 0, err
+    legit = home / ".rharness" / "plugins" / "testconf2026"
+    before = tree_hash(legit)
+    shutil.copytree(repo / "venues" / "testconf2026", repo / "venues" / "impostor2026")
+    (repo / "venues" / "impostor2026" / "checks.py").write_text(
+        "def check(project_dir, venue):\n    return [('error', 'x', 'impostor code ran')]\n")
+    _commit(repo, "impostor")
+    other = make_project(ws, slug="other")
+    code, out, err = run_cli(["venue", "add", "impostor2026"], cwd=other, env=env)
+    assert code == 2, (code, out, err)
+    assert "impostor2026" in err and "testconf2026" in err
+    assert tree_hash(legit) == before
+    assert "impostor code ran" not in (legit / "checks.py").read_text()
+
+
 def test_change_to_an_unknown_venue_keeps_the_old_one(ws, tmp_path, home):
     """C3: a failed change must not leave the project venue-less."""
     env, index, repo, p = _setup(ws, tmp_path)

@@ -310,30 +310,41 @@ def resolve_source(tokens, cfg):
     return f"{cfg['venue_index']}/{name}", name, True, None
 
 
+def _validate_package(plugin: Plugin, spec: str, name_hint: str):
+    if plugin.scope != "project" or plugin.kind != "venue":
+        raise VenueError(f"{plugin.name} is not a venue package (plugin.json needs scope=project and kind=venue)")
+    if plugin.name != name_hint:
+        # the cache is keyed by the name the package declares, so a package claiming
+        # someone else's name would otherwise be installed as, and trusted as, that venue
+        raise VenueError(f"{spec} declares name {plugin.name!r}, not {name_hint!r}")
+
+
 def fetch_package(spec: str, name_hint: str, refresh: bool = False) -> Plugin:
+    """The venue package for `spec`, cached at package_dir(name_hint).
+
+    A fetch is staged in a temporary root and validated there; nothing under
+    ~/.rharness/plugins/ is touched until the package has passed, so a package that
+    declares another venue's name cannot overwrite that venue's cache.
+    """
     cache = package_dir(name_hint)
     if not refresh and (cache / "plugin.json").exists() and source_info(cache).get("spec") == spec:
         plugin = Plugin(name_hint, cache)
-        fetched = None
-    else:
+        _validate_package(plugin, spec, name_hint)
+        return plugin
+    tmp = Path(tempfile.mkdtemp(prefix="rharness-venue-fetch-"))
+    try:
         try:
-            d = fetch_plugin(spec)
+            d = fetch_plugin(spec, dest_root=tmp)
         except PluginNotFound as e:
             raise VenueError(f"no venue package at {spec}: {e}")
-        plugin = Plugin(d.name, d)
-        fetched = d
-    try:
-        if plugin.scope != "project" or plugin.kind != "venue":
-            raise VenueError(f"{plugin.name} is not a venue package (plugin.json needs scope=project and kind=venue)")
-        if plugin.name != name_hint:
-            # fetch_plugin caches under the name the package declares, so a package that
-            # claims someone else's name would otherwise overwrite that package's cache
-            raise VenueError(f"{spec} declares name {plugin.name!r}, not {name_hint!r}")
-    except VenueError:
-        if fetched is not None:
-            shutil.rmtree(fetched, ignore_errors=True)
-        raise
-    return plugin
+        _validate_package(Plugin(d.name, d), spec, name_hint)
+        if cache.exists():
+            shutil.rmtree(cache)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(d), str(cache))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return Plugin(name_hint, cache)
 
 
 def confirm_or_refuse(lines, yes: bool, sub: str) -> bool:
