@@ -12,6 +12,9 @@ CITE_RE = re.compile(r"\\cite[a-zA-Z*]*\s*(?:\[[^\]]*\]\s*)*\{([^}]*)\}")
 BIBKEY_RE = re.compile(r"^@\w+\s*\{\s*([^,\s]+)\s*,", re.M)
 SECTION_RE = r"\\(?:section|chapter|subsection)\*?\s*\{[^}]*%s"
 NEAR_DAYS = 14
+ANON_WORDS = {"anonymous", "author", "authors", "submission", "institution", "institutions",
+              "affiliation", "affiliations", "and", "paper", "under", "review", "double",
+              "blind", "anon"}
 
 
 def tex_files(pdir: Path):
@@ -177,6 +180,18 @@ def _git_remotes(pdir):
     return sorted(out)
 
 
+def _is_anonymous_author(block: str) -> bool:
+    """True when every word left in the \\author{...} body is a placeholder.
+
+    \\thanks{} groups and LaTeX control sequences are removed first; what remains is
+    split into words on non-letters. An empty word list counts as anonymous.
+    """
+    body = _strip_groups(block, "thanks")
+    body = re.sub(r"\\\\|\\[a-zA-Z]+", " ", body)
+    words = [w.lower() for w in re.split(r"[^A-Za-z]+", body) if w]
+    return all(w in ANON_WORDS for w in words)
+
+
 def _check_anonymity(pdir, venue, tex, env):
     if not venue.get("anonymous"):
         return []
@@ -194,9 +209,7 @@ def _check_anonymity(pdir, venue, tex, env):
     plain = _strip_comments(tex)
     block = _macro_group(plain, "author")
     if block is not None:
-        body = _strip_groups(block, "thanks").split("\\\\", 1)[0]
-        letters = re.sub(r"[^A-Za-z]", "", body)
-        if letters and letters.lower() not in ("anonymous", "anonymousauthors", "anonymoussubmission"):
+        if not _is_anonymous_author(block):
             out.append(("error", "paper/main.tex",
                         f"anonymity: author block is not anonymous: {_snippet(block)}"))
     thanks = _macro_group(plain, "thanks")

@@ -84,8 +84,14 @@ def test_author_block_brace_and_eof_cases(venue_project):
     main.write_text(TEX.replace(r"\author{Anonymous}", "") + r"\author{Jane Doe}")
     msgs = _msgs(VC.check_generic(p, venue, env={"PATH": "/nonexistent"}))
     assert any("author block is not anonymous" in m and "Jane Doe" in m for m in msgs), msgs
-    # a nested \thanks{} group must not truncate the block or make it look named
+    # a nested \thanks{} group must not truncate the block; the affiliation after \\ still leaks
     main.write_text(TEX.replace(r"\author{Anonymous}", r"\author{Anonymous\thanks{x} \\ MIT}"))
+    msgs = _msgs(VC.check_generic(p, venue, env={"PATH": "/nonexistent"}))
+    assert any("author block is not anonymous" in m and "MIT" in m for m in msgs), msgs
+    assert any("thanks" in m for m in msgs), msgs
+    # placeholder words everywhere, including after \\: anonymous
+    main.write_text(TEX.replace(r"\author{Anonymous}",
+                                r"\author{Anonymous Authors\thanks{x} \\ Anonymous Institution}"))
     msgs = _msgs(VC.check_generic(p, venue, env={"PATH": "/nonexistent"}))
     assert not any("author block is not anonymous" in m for m in msgs), msgs
     assert any("thanks" in m for m in msgs), msgs
