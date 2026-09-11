@@ -1,0 +1,11 @@
+{
+  "venue": "testconf", "cycle": "2026", "name": "testconf2026",
+  "revision": "2026-09-10",
+  "deadlines": {"abstract": "2027-06-01T23:59:00-12:00", "full": "2027-06-08T23:59:00-12:00"},
+  "primary": "full",
+  "page_limit": {"main": 2, "excludes": ["references", "appendix"]},
+  "anonymous": true,
+  "template": {"repo": "lab/template-repo", "ref": "main", "files": ["testconf2026.sty"]},
+  "required_sections": ["abstract", "introduction"],
+  "sources": [{"kind": "cfp", "url": "https://example.invalid/cfp", "retrieved": "2026-09-10"}]
+}
