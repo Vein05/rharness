@@ -116,7 +116,7 @@ def workspace_brief(ws, cfg: dict) -> str:
     for pdir in ws.projects():
         ch = charter_summary(pdir)
         h = newest_dated(pdir / "handoff")
-        findings = lint_project(pdir, cfg, writing_template_region())
+        findings = lint_project(pdir, cfg, writing_template_region(), venue_checks=False)
         errors = sum(1 for f in findings if f.severity == "error")
         out.append(f"| {pdir.name} | {ch['kill']} | {gitutil.newest_commit_date(pdir) or 'none'} | "
                    f"{gitutil.dirty_count(pdir)} | {DATE_MD.match(h.name).group(1) if h else 'none'} | "

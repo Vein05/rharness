@@ -57,7 +57,7 @@ def writing_template_region():
     return get_region((BASE_DIR / "project" / "paper" / "writing.md").read_text(), "base")
 
 
-def lint_project(pdir: Path, cfg: dict, template_region=None):
+def lint_project(pdir: Path, cfg: dict, template_region=None, venue_checks=True):
     out = []
     name = pdir.name
 
@@ -158,6 +158,11 @@ def lint_project(pdir: Path, cfg: dict, template_region=None):
             W("paper/writing.md", "paper/writing.md has no rharness base region; generic sections cannot be checked")
         elif region != template_region:
             W("paper/writing.md", "paper/writing.md generic section differs from the template")
+
+    if venue_checks:
+        from . import venuecheck
+        for sev, path, msg in venuecheck.lint_findings(pdir):
+            (E if sev == "error" else W)(path, msg)
     return out
 
 
