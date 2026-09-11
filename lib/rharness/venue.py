@@ -137,16 +137,14 @@ def _keep_existing(pm: Manifest, name: str, rel: str) -> bool:
     return entry is None or entry.get("owner") != owner(name)
 
 
-def fetch_templates(pdir: Path, venue: dict, pm: Manifest, name: str) -> list:
-    tpl = venue.get("template")
+def template_blobs(tpl: dict) -> dict:
+    """{basename: bytes} for a venue's template files, fetched but not yet written to the project."""
     if not tpl:
-        return []
+        return {}
     for item in (tpl.get("files") if "repo" in tpl else tpl.get("extract")) or []:
         if Path(item).name == "main.tex":
             raise VenueError("template must not ship main.tex")
-    paper = Path(pdir) / "paper"
-    paper.mkdir(exist_ok=True)
-    written = []
+    blobs = {}
     if "repo" in tpl:
         remote = remote_url(tpl["repo"])
         if remote is None:
@@ -160,12 +158,7 @@ def fetch_templates(pdir: Path, venue: dict, pm: Manifest, name: str) -> list:
                 src = base / rel
                 if not src.is_file():
                     raise VenueError(f"template file {rel} not found in {tpl['repo']}@{tpl['ref']}")
-                dest = paper / Path(rel).name
-                if _keep_existing(pm, name, f"paper/{dest.name}"):
-                    print(f"  kept existing paper/{dest.name} (not owned by venue {name}; not overwritten)")
-                    continue
-                shutil.copy2(src, dest)
-                written.append(f"paper/{dest.name}")
+                blobs[Path(rel).name] = src.read_bytes()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     else:
@@ -185,12 +178,26 @@ def fetch_templates(pdir: Path, venue: dict, pm: Manifest, name: str) -> list:
         for member in tpl["extract"]:
             if member not in names:
                 raise VenueError(f"template zip has no member {member}")
-            dest = paper / Path(member).name
-            if _keep_existing(pm, name, f"paper/{dest.name}"):
-                print(f"  kept existing paper/{dest.name} (not owned by venue {name}; not overwritten)")
-                continue
-            dest.write_bytes(z.read(member))
-            written.append(f"paper/{dest.name}")
+            blobs[Path(member).name] = z.read(member)
+    return blobs
+
+
+def fetch_templates(pdir: Path, venue: dict, pm: Manifest, name: str, blobs=None) -> list:
+    """Write the venue's template files into paper/. `blobs` reuses an earlier template_blobs()."""
+    tpl = venue.get("template")
+    if not tpl:
+        return []
+    if blobs is None:
+        blobs = template_blobs(tpl)
+    paper = Path(pdir) / "paper"
+    paper.mkdir(exist_ok=True)
+    written = []
+    for base, data in blobs.items():
+        if _keep_existing(pm, name, f"paper/{base}"):
+            print(f"  kept existing paper/{base} (not owned by venue {name}; not overwritten)")
+            continue
+        (paper / base).write_bytes(data)
+        written.append(f"paper/{base}")
     for rel in written:
         _record_paper_file(pm, pdir, name, rel)
     return written
@@ -357,7 +364,7 @@ def cmd_add(ws, pdir, tokens, cfg, yes=False, dry_run=False, refresh=False, note
 
 
 def is_from_index(block, cfg) -> bool:
-    return bool(block.get("source", "").startswith(cfg["venue_index"])) and not block.get("ref")
+    return bool(block.get("source", "").startswith(cfg["venue_index"].rstrip("/") + "/")) and not block.get("ref")
 
 
 def _stale(block, now=None) -> bool:
@@ -431,11 +438,13 @@ def apply_upstream(ws, pdir, block, new_dir: Path, cfg, allow_code: bool) -> lis
             replaced.append(rel)
     old_tpl = block.get("template")
     if venue.get("template") != old_tpl:
+        # fetch first: a failure here must not leave the old template files deleted
+        blobs = template_blobs(venue.get("template"))
         for rel in [r for r in pm.files_owned_by(owner(name)) if not pm.entry(r).get("source")]:
             if pm.is_unmodified(rel):
                 (pdir / rel).unlink(missing_ok=True)
                 pm.forget(rel)
-        replaced += fetch_templates(pdir, venue, pm, name)
+        replaced += fetch_templates(pdir, venue, pm, name, blobs=blobs)
     _upsert_agents(pdir, pm, plugin)
     pm.save()
     info = source_info(cache)
@@ -445,8 +454,12 @@ def apply_upstream(ws, pdir, block, new_dir: Path, cfg, allow_code: bool) -> lis
     return replaced
 
 
-def refresh_if_stale(ws, pdir, cfg, force=False, now=None) -> dict:
-    """Bring the cached venue package up to date when the TTL has passed. Never raises for network trouble."""
+def refresh_if_stale(ws, pdir, cfg, force=False, now=None, prefetched=None) -> dict:
+    """Bring the cached venue package up to date when the TTL has passed. Never raises for network trouble.
+
+    `prefetched` is a directory holding an already fetched package; when given, neither
+    ls-remote nor a fetch runs and that directory is applied as-is.
+    """
     block = read_block(pdir)
     if not block:
         return {"status": "none", "detail": "no venue"}
@@ -455,7 +468,7 @@ def refresh_if_stale(ws, pdir, cfg, force=False, now=None) -> dict:
     if not force and not _stale(block, now=now):
         return {"status": "fresh", "detail": "fetched within 24h"}
     spec = block["source"]
-    if not force:
+    if not force and prefetched is None:
         tip = _ls_remote_sha(spec)
         if tip is None:
             return {"status": "offline", "detail": "upstream not reachable"}
@@ -464,10 +477,13 @@ def refresh_if_stale(ws, pdir, cfg, force=False, now=None) -> dict:
             return {"status": "unchanged", "detail": "upstream tip equals the cached commit"}
     tmp = Path(tempfile.mkdtemp(prefix="rharness-venue-"))
     try:
-        try:
-            new_dir = fetch_plugin(spec, dest_root=tmp)
-        except (PluginNotFound, OSError):
-            return {"status": "offline", "detail": "upstream not reachable"}
+        if prefetched is not None:
+            new_dir = Path(prefetched)
+        else:
+            try:
+                new_dir = fetch_plugin(spec, dest_root=tmp)
+            except (PluginNotFound, OSError, subprocess.SubprocessError):
+                return {"status": "offline", "detail": "upstream not reachable"}
         new_tree = tree_hash(new_dir)
         new_info = source_info(new_dir)
         if new_tree == block.get("tree"):
@@ -611,12 +627,13 @@ def cmd_update(ws, pdir, cfg, yes=False):
         print(f"rharness: {pdir.name} has no venue", file=sys.stderr)
         return 1
     if not is_from_index(block, cfg):
-        # foreign source: a changed checks.py needs consent
+        # foreign source: a changed checks.py needs consent, and the very directory that was
+        # inspected is the one applied — no second clone between consent and apply
         tmp = Path(tempfile.mkdtemp(prefix="rharness-venue-"))
         try:
             try:
                 new_dir = fetch_plugin(block["source"], dest_root=tmp)
-            except PluginNotFound as e:
+            except (PluginNotFound, OSError, subprocess.SubprocessError) as e:
                 print(f"rharness: cannot fetch {block['source']}: {e}", file=sys.stderr)
                 return 2
             cache = package_dir(block["name"])
@@ -627,9 +644,11 @@ def cmd_update(ws, pdir, cfg, yes=False):
                 print(capability_summary(Plugin(new_dir.name, new_dir), ws))
                 print("Re-run with --yes (before the subcommand) to accept: `rharness --yes venue update`")
                 return 1
+            r = refresh_if_stale(ws, pdir, cfg, force=True, prefetched=new_dir)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-    r = refresh_if_stale(ws, pdir, cfg, force=True)
+    else:
+        r = refresh_if_stale(ws, pdir, cfg, force=True)
     print(f"{block['name']}: {r['status']}; {r['detail']}")
     for rel in r.get("replaced", []):
         print(f"  replaced {rel}")
@@ -664,6 +683,13 @@ def cmd_change(ws, pdir, tokens, cfg, yes=False, dry_run=False):
     return cmd_add(ws, pdir, tokens, cfg, yes=yes, note=f"venue changed from {old} to {hint}")
 
 
+def _cached_index(idx: Path, fetched):
+    try:
+        return json.loads(idx.read_text()), fetched, True
+    except (OSError, json.JSONDecodeError):
+        return [], None, True
+
+
 def fetch_index(cfg, force=False):
     """(entries, fetched_iso, cached) for the configured venue index, cached under rharness_home().
 
@@ -681,7 +707,7 @@ def fetch_index(cfg, force=False):
             fetched = None
     fresh = fetched is not None and not _stale({"fetched": fetched})
     if idx.exists() and fresh and not force:
-        return json.loads(idx.read_text()), fetched, True
+        return _cached_index(idx, fetched)
     remote = remote_url(cfg["venue_index"])
     if remote is not None:
         url, ref, subdir = remote
@@ -691,16 +717,18 @@ def fetch_index(cfg, force=False):
                 clone_at(url, ref, tmp / "repo")
                 src = (tmp / "repo" / subdir if subdir else tmp / "repo") / "INDEX.json"
                 if src.exists():
-                    idx.write_text(src.read_text())
+                    text = src.read_text()
+                    entries = json.loads(text)  # parse before caching: malformed upstream keeps the old cache
+                    idx.write_text(text)
                     fetched = now_iso()
                     meta.write_text(json.dumps({"fetched": fetched}) + "\n")
-                    return json.loads(idx.read_text()), fetched, False
-            except (PluginNotFound, OSError, json.JSONDecodeError):
+                    return entries, fetched, False
+            except (PluginNotFound, OSError, subprocess.SubprocessError, json.JSONDecodeError):
                 pass
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     if idx.exists():
-        return json.loads(idx.read_text()), fetched, True
+        return _cached_index(idx, fetched)
     return [], None, True
 
 

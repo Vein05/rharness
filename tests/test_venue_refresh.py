@@ -159,3 +159,34 @@ def test_list_uses_index_and_cache(ws, tmp_path, home, monkeypatch):
     monkeypatch.setenv("RHARNESS_GITHUB_BASE", "file:///nonexistent/")
     code, out, err = run_cli(["venue", "list"], cwd=ws, env={"RHARNESS_GITHUB_BASE": "file:///nonexistent/"})
     assert code == 0 and "testconf2026" in out and "cached" in out
+
+
+def test_fetch_timeout_is_offline(ws, tmp_path, home, monkeypatch):
+    env, index, repo, p = _setup(ws, tmp_path, monkeypatch)
+    _age_block(p, 2)
+    _bump_upstream(repo)
+    from rharness import plugin as P
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("git", 5)
+
+    monkeypatch.setattr(P, "clone_at", boom)
+    r = V.refresh_if_stale(Workspace.open(override=ws), p, load_lint_config(ws / "lint.toml"))
+    assert r["status"] == "offline", r
+
+
+def test_unfetchable_new_template_leaves_the_old_one_in_place(ws, tmp_path, home, monkeypatch):
+    env, index, repo, p = _setup(ws, tmp_path, monkeypatch)
+    before = (p / "paper" / "testconf2026.sty").read_text()
+    vj = repo / "venues" / "testconf2026" / "venue.json"
+    d = json.loads(vj.read_text())
+    d["template"]["files"] = ["no-such-file.sty"]
+    vj.write_text(json.dumps(d, indent=2) + "\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "broken template"], cwd=repo, check=True)
+    code, out, err = run_cli(["venue", "update"], cwd=p, env=env)
+    assert code == 2, (out, err)
+    assert "no-such-file.sty" in err and "Traceback" not in err
+    assert (p / "paper" / "testconf2026.sty").read_text() == before
+    pm = json.loads((p / ".rharness" / "project.json").read_text())
+    assert "paper/testconf2026.sty" in pm["files"]
