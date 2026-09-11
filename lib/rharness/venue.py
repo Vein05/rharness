@@ -271,7 +271,8 @@ def resolve_source(tokens, cfg):
     """(spec, name_hint, from_index, ref). Bare names resolve against cfg['venue_index']."""
     if len(tokens) == 1 and is_source_spec(tokens[0]):
         base, ref = split_pin(tokens[0])
-        return tokens[0], base.rstrip("/").rsplit("/", 1)[-1], False, ref
+        from_index = base.startswith(cfg["venue_index"].rstrip("/") + "/") and ref is None
+        return tokens[0], base.rstrip("/").rsplit("/", 1)[-1], from_index, ref
     name = normalize_name(tokens)
     if not name:
         raise VenueError(f"cannot make a venue name from {' '.join(tokens)!r}")

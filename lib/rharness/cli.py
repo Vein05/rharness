@@ -90,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true", help="overwrite modified files (backed up first)")
 
     pp = argparse.ArgumentParser(add_help=False)
-    pp.add_argument("--project", help="project slug when not inside one")
+    pp.add_argument("--project", default=argparse.SUPPRESS, help="project slug when not inside one")
     s = sub.add_parser("venue", parents=[pp],
                        help="submission target for a project: status, add, change, lock, unlock, check, update, remove, list")
     vs = s.add_subparsers(dest="venue_cmd")

@@ -98,3 +98,25 @@ def test_list_hides_project_scoped_packages_from_plugin_list(ws, tmp_path, home)
     code, out, err = run_cli(["list"], cwd=ws, env=env)
     assert code == 0
     assert "testconf2026" not in out
+
+
+def test_project_flag_before_the_subcommand(ws, tmp_path, home):
+    env, index, repo, p = _setup(ws, tmp_path)
+    code, out, err = run_cli(["venue", "--project", "seam", "add", "testconf2026"], cwd=ws, env=env)
+    assert code == 0, err
+    code, out, err = run_cli(["venue", "--project", "seam", "lock"], cwd=ws, env=env)
+    assert code == 0, err
+    assert "Locked testconf2026 on seam" in out
+    code, out, err = run_cli(["venue", "unlock", "--project", "seam", "--yes"], cwd=ws, env=env)
+    assert code == 2  # --yes is a global flag, before the subcommand
+    code, out, err = run_cli(["--yes", "venue", "unlock", "--project", "seam"], cwd=ws, env=env)
+    assert code == 0, err
+    assert "Unlocked testconf2026 on seam" in out
+
+
+def test_add_by_full_index_spec_needs_no_confirmation(ws, tmp_path, home):
+    env, index, repo, p = _setup(ws, tmp_path)
+    code, out, err = run_cli(["venue", "add", f"{index}/testconf2026"], cwd=p, env=env)
+    assert code == 0, err
+    assert "Installed venue testconf2026" in out
+    assert (p / "paper" / "testconf2026.sty").exists()
