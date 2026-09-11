@@ -6,6 +6,7 @@ DEFAULTS = {
     "handoff_max_days_behind_commit": 1,
     "changelog_window_days": 14,
     "dirty_tree_warn_above": 0,
+    "venue_index": "Vein05/rharness/venues",
 }
 _LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$")
 

@@ -48,6 +48,23 @@ def doctor_checks(ws, env=None):
     checks.append(("git on PATH", bool(which("git")), which("git") or "missing"))
     checks.append(("git-lfs on PATH", bool(which("git-lfs")),
                    which("git-lfs") or "missing (LFS rules will not apply)"))
+    TINYTEX = 'wget -qO- "https://yihui.org/tinytex/install-bin-unix.sh" | sh'
+    have_engine = bool(which("latexmk") or which("pdflatex"))
+    for tool, hint in (
+        ("latexmk", "runs `rharness paper build`"),
+        ("pdflatex", "the engine behind latexmk"),
+    ):
+        p = which(tool)
+        detail = p or (f"missing; optional. Install TinyTeX: {TINYTEX}  (or download the PDF from Overleaf "
+                       f"into paper/main.pdf)" if not have_engine else "missing; optional")
+        checks.append((f"optional tool {tool}", True if p else None, detail))
+    for tool, hint in (
+        ("pdfinfo", "exact page counts; without it rharness counts pages itself"),
+        ("pdftotext", "anonymity scan of the PDF text and locating the References page; without it the tex sources are scanned"),
+    ):
+        p = which(tool)
+        checks.append((f"optional tool {tool}", True if p else None,
+                       p or f"missing; optional (poppler). Enables {hint}"))
     if ws is None:
         checks.append(("workspace", False,
                        "not inside a workspace (run `rharness init` or pass --workspace)"))

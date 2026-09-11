@@ -221,3 +221,11 @@ def test_code_without_component_spec_warns(ws):
     _commit_all(p)
     _, msgs, _ = _run(ws)
     assert not any("code without a spec" in m for m in msgs)
+
+
+def test_lintcfg_has_venue_index_default(tmp_path):
+    from rharness.lintcfg import load_lint_config
+    cfg = load_lint_config(None)
+    assert cfg["venue_index"] == "Vein05/rharness/venues"
+    f = tmp_path / "lint.toml"; f.write_text('venue_index = "lab/repo/venues"\n')
+    assert load_lint_config(f)["venue_index"] == "lab/repo/venues"

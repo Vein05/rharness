@@ -186,8 +186,9 @@ def run_doctor(args):
         ws = None
     failed = False
     for name, ok, detail in doctor_checks(ws):
-        print(f"{'ok  ' if ok else 'FAIL'} {name}: {detail}")
-        failed |= not ok
+        tag = "ok  " if ok else ("note" if ok is None else "FAIL")
+        print(f"{tag} {name}: {detail}")
+        failed |= ok is False
     return 1 if failed else 0
 
 
