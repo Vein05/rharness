@@ -35,6 +35,58 @@ def _strip_comments(tex: str) -> str:
     return re.sub(r"(?<!\\)%.*", "", tex)
 
 
+def _snippet(text: str, limit: int = 80) -> str:
+    s = " ".join(str(text).split())
+    return s if len(s) <= limit else s[:limit - 1] + "…"
+
+
+def _group_at(text: str, i: int):
+    """The balanced {...} group starting at the first non-space char at or after i.
+
+    Returns (content, end_index) or None when there is no brace group there.
+    """
+    while i < len(text) and text[i].isspace():
+        i += 1
+    if i >= len(text) or text[i] != "{":
+        return None
+    depth = 0
+    j = i
+    while j < len(text):
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[i + 1:j], j + 1
+        j += 1
+    return None
+
+
+def _macro_group(text: str, macro: str):
+    """Content of the first \\<macro>{...} group, brace-balanced, or None."""
+    for m in re.finditer(r"\\" + macro + r"(?![A-Za-z])", text):
+        got = _group_at(text, m.end())
+        if got is not None:
+            return got[0]
+    return None
+
+
+def _strip_groups(text: str, macro: str) -> str:
+    """Remove every \\<macro>{...} (balanced) from text."""
+    out = text
+    while True:
+        m = re.search(r"\\" + macro + r"(?![A-Za-z])", out)
+        if not m:
+            return out
+        got = _group_at(out, m.end())
+        end = got[1] if got is not None else m.end()
+        out = out[:m.start()] + out[end:]
+
+
 def _check_style(pdir, venue, tex):
     stem = style_stem(venue)
     if not stem:
@@ -139,16 +191,23 @@ def _check_anonymity(pdir, venue, tex, env):
     for remote in _git_remotes(pdir):
         if remote.lower() in haystack:
             out.append(("error", where, f"anonymity: git remote '{remote}' appears in the paper text"))
-    m = re.search(r"\\author\s*\{(.*?)\}\s*(?:\n|\\)", _strip_comments(tex), re.S)
-    if m:
-        body = re.sub(r"\\thanks\{.*?\}", "", m.group(1), flags=re.S)
+    plain = _strip_comments(tex)
+    block = _macro_group(plain, "author")
+    if block is not None:
+        body = _strip_groups(block, "thanks").split("\\\\", 1)[0]
         letters = re.sub(r"[^A-Za-z]", "", body)
         if letters and letters.lower() not in ("anonymous", "anonymousauthors", "anonymoussubmission"):
-            out.append(("error", "paper/main.tex", "anonymity: author block is not anonymous"))
-    if re.search(r"\\thanks\{", _strip_comments(tex)):
-        out.append(("error", "paper/main.tex", "anonymity: \\thanks{} present"))
-    if re.search(r"\\section\*?\{\s*acknowledg", _strip_comments(tex), re.I):
-        out.append(("error", "paper/main.tex", "anonymity: acknowledgements section present"))
+            out.append(("error", "paper/main.tex",
+                        f"anonymity: author block is not anonymous: {_snippet(block)}"))
+    thanks = _macro_group(plain, "thanks")
+    if thanks is not None:
+        out.append(("error", "paper/main.tex", f"anonymity: \\thanks{{}} present: {_snippet(thanks)}"))
+    ack = re.search(r"\\section\*?\{\s*acknowledg", plain, re.I)
+    if ack:
+        line = plain[plain.rfind("\n", 0, ack.start()) + 1:]
+        line = line.split("\n", 1)[0]
+        out.append(("error", "paper/main.tex",
+                    f"anonymity: acknowledgements section present: {_snippet(line)}"))
     return out
 
 
@@ -228,9 +287,16 @@ def lint_findings(pdir, env=None, now=None):
     fn = load_package_checks(pkg)
     if fn is not None:
         try:
-            findings += [tuple(x) for x in fn(pdir, venue)]
+            returned = list(fn(pdir, venue) or [])
         except Exception as e:
+            returned = []
             findings.append(("warning", "checks.py", f"package checks raised: {e}"))
+        for item in returned:
+            if isinstance(item, (list, tuple)) and len(item) == 3 and item[0] in ("error", "warning"):
+                findings.append(tuple(item))
+            else:
+                findings.append(("warning", "checks.py",
+                                 f"package checks returned a malformed finding: {repr(item)[:80]}"))
     for sev, path, m in findings:
         out.append((sev if locked else "warning", path, m))
     return out

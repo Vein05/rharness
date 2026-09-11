@@ -71,6 +71,24 @@ def test_anonymity_findings(venue_project):
     assert any("thanks" in m for m in anon)
     assert any("acknowledg" in m.lower() for m in anon)
     assert any("remote" in m and "sugam-lab/seam-paper" in m for m in anon)
+    # every tex-derived finding names the string it matched
+    assert any("author block" in m and "Jane Q. Researcher" in m for m in anon), anon
+    assert any("thanks" in m and "funded" in m for m in anon), anon
+    assert any("acknowledgements section present" in m and "Acknowledgements}" in m for m in anon), anon
+
+
+def test_author_block_brace_and_eof_cases(venue_project):
+    p, venue, _ = venue_project
+    main = p / "paper" / "main.tex"
+    # no trailing newline and nothing after the closing brace
+    main.write_text(TEX.replace(r"\author{Anonymous}", "") + r"\author{Jane Doe}")
+    msgs = _msgs(VC.check_generic(p, venue, env={"PATH": "/nonexistent"}))
+    assert any("author block is not anonymous" in m and "Jane Doe" in m for m in msgs), msgs
+    # a nested \thanks{} group must not truncate the block or make it look named
+    main.write_text(TEX.replace(r"\author{Anonymous}", r"\author{Anonymous\thanks{x} \\ MIT}"))
+    msgs = _msgs(VC.check_generic(p, venue, env={"PATH": "/nonexistent"}))
+    assert not any("author block is not anonymous" in m for m in msgs), msgs
+    assert any("thanks" in m for m in msgs), msgs
 
 
 def test_page_count_paths(venue_project, tmp_path):
@@ -120,13 +138,42 @@ def test_deadline_base_checks(venue_project):
     assert sum("deadline" in m and "passed" in m for m in msgs) == 2
 
 
+def test_malformed_package_finding_is_one_warning(venue_project):
+    p, venue, d = venue_project
+    (d / "checks.py").write_text(
+        "def check(project_dir, venue):\n"
+        "    return [('warning', 'paper/main.tex')]\n")
+    msgs = _msgs(VC.lint_findings(p, env={"PATH": "/nonexistent"}))
+    bad = [m for m in msgs if "malformed finding" in m]
+    assert len(bad) == 1 and bad[0].startswith("warning checks.py:"), msgs
+
+
 def test_lint_cli_includes_venue_rows_and_workspace_brief_skips_them(venue_project, ws):
     from conftest import run_cli
+    from rharness.lint import lint_project, writing_template_region
+    from rharness.lintcfg import load_lint_config
     p, venue, d = venue_project
     code, out, err = run_cli(["lint", "seam"], cwd=ws, env={"PATH": "/usr/bin:/bin"})
+    assert code == 1, (code, out, err)  # the fixture project has findings
     assert "missing2021" in out
+
+    cfg = load_lint_config(ws / "lint.toml")
+    region = writing_template_region()
+    off = lint_project(p, cfg, region, venue_checks=False)
+    on = lint_project(p, cfg, region)
+    assert len(on) > len(off)  # the fixture does produce venue findings
+
+    def cell(findings):
+        errors = sum(1 for f in findings if f.severity == "error")
+        return f"{errors}E/{len(findings) - errors}W"
+
     code, out, err = run_cli(["brief"], cwd=ws)
-    assert "missing2021" not in out
+    assert code == 0, err
+    row = [l for l in out.splitlines() if l.startswith("| seam |")]
+    assert len(row) == 1, out
+    got = [c.strip() for c in row[0].strip().strip("|").split("|")][-1]
+    assert got == cell(off), (got, cell(off), cell(on))
+    assert got != cell(on)
 
 
 def test_missing_package_dir_is_one_warning(venue_project):
