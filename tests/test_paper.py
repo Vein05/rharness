@@ -47,6 +47,23 @@ def test_build_without_tlmgr_reports_missing_file(tmp_path):
     assert code == 1 and "foo.sty" in msg and "not found" in msg
 
 
+def test_build_without_latexmk_but_with_tlmgr(tmp_path):
+    env = {"PATH": _fakes(tmp_path, with_latexmk=False)}
+    paper_dir = tmp_path / "paper"; paper_dir.mkdir()
+    (paper_dir / "main.tex").write_text("x")
+    code, msg = paper.build(paper_dir, env=env)
+    assert code == 2 and "tlmgr install latexmk" in msg
+
+
+def test_build_gives_up_after_max_rounds_installs(tmp_path):
+    b = Path(_fakes(tmp_path))
+    _fake(b, "tlmgr", 'case "$1" in\n search) printf "foopkg:\\n\\ttexmf-dist/tex/latex/foopkg/foo.sty\\n";;\nesac\nexit 0\n')
+    paper_dir = tmp_path / "paper"; paper_dir.mkdir()
+    (paper_dir / "main.tex").write_text("x")
+    code, msg = paper.build(paper_dir, env={"PATH": str(b)}, max_rounds=5)
+    assert code == 1 and msg == "gave up after installing 5 package(s): " + ", ".join(["foopkg"] * 5)
+
+
 def test_build_without_engine(tmp_path):
     b = tmp_path / "empty"; b.mkdir()
     paper_dir = tmp_path / "paper"; paper_dir.mkdir()

@@ -63,7 +63,7 @@ def build(paper_dir, env=None, max_rounds=5, timeout=600):
         return 2, f"no paper/ directory at {paper_dir}"
     eng = find_engine(env)
     if not eng["latexmk"]:
-        if eng["pdflatex"] and eng["tlmgr"]:
+        if eng["tlmgr"]:
             return 2, "latexmk is missing; install it with `tlmgr install latexmk`"
         return 2, (f"no TeX engine on PATH. Install TinyTeX with `{TINYTEX}`, or download the compiled PDF from "
                    "Overleaf into paper/main.pdf")
@@ -72,7 +72,7 @@ def build(paper_dir, env=None, max_rounds=5, timeout=600):
     else:
         cmd = [eng["latexmk"], "-pdf", "-interaction=nonstopmode", "main.tex"]
     installed = []
-    for _ in range(max_rounds + 1):
+    while True:
         r = _run(cmd, paper_dir, env, timeout)
         log = paper_dir / "main.log"
         log_text = log.read_text(errors="replace") if log.exists() else ""
@@ -83,7 +83,9 @@ def build(paper_dir, env=None, max_rounds=5, timeout=600):
         if missing is None:
             return 1, f"build failed ({' '.join(Path(c).name for c in cmd)} exited {r.returncode}):\n" + _tail(r.stdout, r.stderr, log_text)
         if not eng["tlmgr"]:
-            return 1, f"{missing} not found and tlmgr is not on PATH; install the package that provides it and rebuild:\n" + _tail(r.stdout, r.stderr)
+            return 1, f"{missing} not found and tlmgr is not on PATH; install the package that provides it and rebuild:\n" + _tail(r.stdout, r.stderr, log_text)
+        if len(installed) >= max_rounds:
+            return 1, f"gave up after installing {len(installed)} package(s): {', '.join(installed)}"
         pkg = tlmgr_package_for(missing, env)
         if pkg is None:
             return 1, f"{missing} not found; tlmgr could not find a package for it (offline?)"
@@ -91,4 +93,3 @@ def build(paper_dir, env=None, max_rounds=5, timeout=600):
         if ins.returncode != 0:
             return 1, f"{missing} not found; `tlmgr install {pkg}` failed (offline?):\n" + _tail(ins.stdout, ins.stderr)
         installed.append(pkg)
-    return 1, f"gave up after installing {len(installed)} package(s): {', '.join(installed)}"
