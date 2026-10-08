@@ -311,10 +311,11 @@ def _is_anonymous_author(block: str) -> bool:
 def author_block_hidden(venue, plain_tex: str) -> bool:
     """True when the venue's style hides \\author and \\thanks in this build (venue.json author_block)."""
     rule = venue.get("author_block") or {}
+    preamble = plain_tex.split("\\begin{document}", 1)[0]  # options shown in the body are not in effect
     if "hidden_if" in rule:
-        return re.search(rule["hidden_if"], plain_tex) is not None
+        return re.search(rule["hidden_if"], preamble) is not None
     if "hidden_unless" in rule:
-        return re.search(rule["hidden_unless"], plain_tex) is None
+        return re.search(rule["hidden_unless"], preamble) is None
     return False
 
 

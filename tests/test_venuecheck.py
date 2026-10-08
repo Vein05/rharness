@@ -243,6 +243,8 @@ def test_author_block_hidden_if_style_option(venue_project):
     assert any("git author name 'rharness-test'" in m for m in anon), anon
     leak = review.replace("We cite", "Work by rharness-test. We cite")
     assert any("git author name 'rharness-test'" in m for m in _anon_msgs(p, v, leak))
+    shown = named.replace("We cite", "Load it with \\verb|\\usepackage[review]{testconf2026}|. We cite")
+    assert any("author block" in m for m in _anon_msgs(p, v, shown))  # the body example is not the load
 
 
 def test_author_block_hidden_unless_final_copy(venue_project):

@@ -83,5 +83,7 @@ def test_arr_checks_py_wants_review_mode(name, tmp_path):
     main.write_text("\\documentclass[11pt]{article}\n\\usepackage[review]{acl}\n% \\usepackage{acl}\n")
     assert fn(tmp_path, v) == []
     assert author_block_hidden(v, _strip_comments(main.read_text()))
+    main.write_text("\\usepackage[review]{acl}\n\\begin{document}\n\\begin{verbatim}\n\\usepackage{acl}\n\\end{verbatim}\n")
+    assert fn(tmp_path, v) == []
     main.write_text("\\usepackage[final]{acl}\n")
     assert not author_block_hidden(v, _strip_comments(main.read_text())) and len(fn(tmp_path, v)) == 1

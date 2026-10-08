@@ -387,7 +387,7 @@ name, when it is not `\usepackage{<stem>}` (ARR: `\usepackage[review]{acl}`).
 Optional `author_block` says when the venue's style hides `\author` and
 `\thanks` in the build: `{"hidden_if": "<regex>"}` (ACL: `\usepackage[review]{acl}`)
 or `{"hidden_unless": "<regex>"}` (ICLR: `\iclrfinalcopy`), matched against
-the comment-stripped tex. When hidden, the anonymity check skips the author
+the comment-stripped preamble. When hidden, the anonymity check skips the author
 block and `\thanks`, and leaves them out of the text it scans for git
 author names.
 

@@ -16,7 +16,7 @@
                                   "excludes": {"type": "array", "items": {"type": "string"}}}},
     "anonymous": {"type": "boolean"},
     "style_line": {"type": "string", "description": "the preamble line that loads the style, when it is not \\usepackage{<stem>}"},
-    "author_block": {"type": "object", "description": "when the style hides \\author and \\thanks: a regex over the comment-stripped tex",
+    "author_block": {"type": "object", "description": "when the style hides \\author and \\thanks: a regex over the comment-stripped preamble",
                      "oneOf": [{"required": ["hidden_if"]}, {"required": ["hidden_unless"]}],
                      "properties": {"hidden_if": {"type": "string"}, "hidden_unless": {"type": "string"}},
                      "additionalProperties": false},
