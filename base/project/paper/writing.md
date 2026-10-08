@@ -29,6 +29,30 @@ If the PhD reader cannot tell what was held fixed, the prose is too vague.
 If the senior reader feels that a paragraph repeats itself, cut or combine
 it.
 
+### The read-aloud test
+
+Read every main-text sentence aloud before the paper is reviewed or
+delivered. Reading silently can hide compression that speech exposes.
+Rewrite a passage when any of the following happens:
+
+- You can say the words without understanding what is happening.
+- The sentence has too many clauses to say comfortably in one breath.
+- The sentence sounds awkward, even if it is grammatically correct.
+- You are reciting symbols, model names, or numbers instead of explaining a
+  result.
+- The passage feels slow, dry, or unpleasant to read.
+- A symbol appears and you cannot immediately recall what it means or why it
+  is needed.
+
+Repair the spoken failure, not just its punctuation. Put the conclusion in
+words before the mathematical detail. Move repeated values into a table.
+Split sentences by argumentative job. Remove notation that is defined once
+and never used again. Reintroduce a necessary symbol with a short reminder
+if enough text has passed for a reader to forget it.
+
+The appendix may remain denser than the main paper, but its section openings,
+captions, and interpretation paragraphs must still pass this test.
+
 ## 3. Default prose rules
 
 - Choose the simplest accurate word.
