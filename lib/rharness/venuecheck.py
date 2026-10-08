@@ -2,6 +2,7 @@
 import importlib.util
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import gitutil, pdfutil
@@ -11,6 +12,8 @@ from .venuemeta import days_until
 CITE_RE = re.compile(r"\\cite[a-zA-Z*]*\s*(?:\[[^\]]*\]\s*)*\{([^}]*)\}")
 BIBKEY_RE = re.compile(r"^@\w+\s*\{\s*([^,\s]+)\s*,", re.M)
 SECTION_RE = r"\\(?:section|chapter|subsection)\*?\s*\{[^}]*%s"
+INPUT_RE = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}")
+BIBRES_RE = re.compile(r"\\(?:bibliography|addbibresource)\s*(?:\[[^\]]*\]\s*)?\{([^}]+)\}")
 NEAR_DAYS = 14
 ANON_WORDS = {"anonymous", "author", "authors", "submission", "institution", "institutions",
               "affiliation", "affiliations", "and", "paper", "under", "review", "double",
@@ -24,6 +27,113 @@ def tex_files(pdir: Path):
 
 def tex_text(pdir: Path) -> str:
     return "\n".join(f.read_text(errors="replace") for f in tex_files(pdir))
+
+
+@dataclass
+class Layout:
+    """Where a paper's files are. Finding paths are relative to root.
+
+    A project keeps its paper under paper/ with fixed names. A bare LaTeX directory
+    (`lint --venue`) has its main file found, its tex followed through \\input, and its
+    bib files read from \\bibliography.
+    """
+    root: Path
+    paper: Path
+    main: Path
+    tex: list
+    bibs: list
+    pdf: Path
+    bare: bool = False
+
+    def rel(self, path) -> str:
+        r = Path(path).relative_to(self.root).as_posix()
+        return "" if r == "." else r
+
+    @property
+    def paper_rel(self) -> str:
+        r = self.rel(self.paper)
+        return r + "/" if r else ""
+
+    def sources(self):
+        """Files whose change makes the PDF stale."""
+        if not self.bare:
+            return [f for pat in ("*.tex", "*.bib", "*.sty", "*.cls") for f in self.paper.rglob(pat)]
+        styles = [f for pat in ("*.sty", "*.cls") for f in _visible(self.root, pat)]
+        return list(self.tex) + [b for b in self.bibs if b.exists()] + styles
+
+
+def project_layout(pdir) -> Layout:
+    pdir = Path(pdir)
+    paper = pdir / "paper"
+    return Layout(pdir, paper, paper / "main.tex", tex_files(pdir), [paper / "references.bib"],
+                  paper / "main.pdf")
+
+
+def _visible(root: Path, pattern: str):
+    """rglob without hidden directories (.git, .venv, ...)."""
+    return sorted(f for f in root.rglob(pattern)
+                  if not any(part.startswith(".") for part in f.relative_to(root).parts[:-1]))
+
+
+def find_main(root: Path) -> Path:
+    """main.tex if it has \\documentclass, else the one .tex file that does."""
+    docs = [f for f in _visible(root, "*.tex")
+            if "\\documentclass" in _strip_comments(f.read_text(errors="replace"))]
+    if not docs:
+        raise VenueError(f"no .tex file under {root} has \\documentclass; pass --main FILE")
+    named = [f for f in docs if f.name == "main.tex"]
+    if len(named) == 1:
+        return named[0]
+    if len(docs) == 1:
+        return docs[0]
+    names = ", ".join(f.relative_to(root).as_posix() for f in docs)
+    raise VenueError(f"several .tex files under {root} have \\documentclass ({names}); pass --main FILE")
+
+
+def _resolve_in(root: Path, base: Path, name: str, suffix: str):
+    """LaTeX lookup of name relative to base: name+suffix first, then name. None outside root."""
+    for cand in ((base / (name + suffix)), base / name):
+        try:
+            cand.resolve().relative_to(root.resolve())
+        except ValueError:
+            continue
+        if cand.is_file():
+            return cand
+    return None
+
+
+def bare_layout(root, main=None) -> Layout:
+    root = Path(root)
+    if main is None:
+        main = find_main(root)
+    else:
+        main = Path(main) if Path(main).is_absolute() else root / main
+        if not main.is_file():
+            raise VenueError(f"--main {main} is not a file")
+    tex, queue = [], [main]
+    while queue:
+        f = queue.pop(0)
+        if f in tex:
+            continue
+        tex.append(f)
+        for m in INPUT_RE.finditer(_strip_comments(f.read_text(errors="replace"))):
+            got = _resolve_in(root, main.parent, m.group(1).strip(), ".tex")
+            if got is not None:
+                queue.append(got)
+    bibs = []
+    for f in tex:
+        for m in BIBRES_RE.finditer(_strip_comments(f.read_text(errors="replace"))):
+            for name in m.group(1).split(","):
+                name = name.strip()
+                if name:
+                    b = main.parent / (name if name.endswith(".bib") else name + ".bib")
+                    if b not in bibs:
+                        bibs.append(b)
+    return Layout(root, root, main, tex, bibs, main.with_suffix(".pdf"), bare=True)
+
+
+def _as_layout(where) -> Layout:
+    return where if isinstance(where, Layout) else project_layout(where)
 
 
 def style_stem(venue: dict):
@@ -97,14 +207,15 @@ def _check_style(pdir, venue, tex):
     pat = re.compile(r"\\(usepackage|documentclass)(\[[^\]]*\])?\{[^}]*\b" + re.escape(stem) + r"\b[^}]*\}")
     if pat.search(tex):
         return []
-    main = Path(pdir) / "paper" / "main.tex"
+    lay = _as_layout(pdir)
+    main = lay.main
     marker = main.exists() and "% rharness:venue-style" in main.read_text(errors="replace")
     where = "at the % rharness:venue-style line" if marker else "in the preamble"
-    return [("error", "paper/main.tex",
-             f"main.tex does not load {stem}; add \\usepackage{{{stem}}} {where}")]
+    return [("error", lay.rel(main),
+             f"{main.name} does not load {stem}; add \\usepackage{{{stem}}} {where}")]
 
 
-def _check_sections(venue, tex):
+def _check_sections(venue, tex, paper_rel="paper/"):
     out = []
     for name in venue.get("required_sections", []):
         low = name.lower()
@@ -113,51 +224,60 @@ def _check_sections(venue, tex):
         else:
             ok = re.search(SECTION_RE % re.escape(low), tex, re.I) is not None
         if not ok:
-            out.append(("error", "paper/", f"required section '{name}' not found in the tex sources"))
+            out.append(("error", paper_rel, f"required section '{name}' not found in the tex sources"))
     return out
 
 
 def _check_cites(pdir, tex):
-    out = []
-    bib = Path(pdir) / "paper" / "references.bib"
-    if not bib.exists():
-        return [("warning", "paper/references.bib", "references.bib missing; citation keys cannot be checked")]
-    keys = BIBKEY_RE.findall(bib.read_text(errors="replace"))
-    dups = sorted({k for k in keys if keys.count(k) > 1})
-    for k in dups:
-        out.append(("warning", "paper/references.bib", f"duplicate bib key {k}"))
+    lay = _as_layout(pdir)
+    if not lay.bibs:
+        return [("warning", lay.rel(lay.main), "no \\bibliography{} in the tex sources; citation keys cannot be checked")]
+    missing = [b for b in lay.bibs if not b.exists()]
+    if missing:
+        return [("warning", lay.rel(b), f"{b.name} missing; citation keys cannot be checked") for b in missing]
+    out, keys, dups = [], set(), {}
+    for bib in lay.bibs:
+        for k in BIBKEY_RE.findall(bib.read_text(errors="replace")):
+            if k in keys:
+                dups.setdefault(k, lay.rel(bib))
+            keys.add(k)
+    for k in sorted(dups):
+        out.append(("warning", dups[k], f"duplicate bib key {k}"))
     cited = set()
     for group in CITE_RE.findall(tex):
         cited.update(x.strip() for x in group.split(",") if x.strip())
-    for k in sorted(cited - set(keys)):
-        out.append(("error", "paper/main.tex", f"citation key {k} is not in references.bib"))
+    names = ", ".join(b.name for b in lay.bibs)
+    for k in sorted(cited - keys):
+        out.append(("error", lay.rel(lay.main), f"citation key {k} is not in {names}"))
     return out
 
 
 def _check_pages(pdir, venue, env):
     pl = venue.get("page_limit")
-    pdf = Path(pdir) / "paper" / "main.pdf"
+    lay = _as_layout(pdir)
+    pdf = lay.pdf
+    rel = lay.rel(pdf)
     if not pl or not pdf.exists():
         return []
     total = pdfutil.page_count(pdf, env=env)
     if total is None:
-        return [("warning", "paper/main.pdf", "could not count pages in paper/main.pdf")]
+        return [("warning", rel, f"could not count pages in {rel}")]
     limit = pl["main"]
     excludes = pl.get("excludes") or []
     if not excludes:
         if total > limit:
-            return [("error", "paper/main.pdf", f"paper is {total} pages; limit is {limit}")]
+            return [("error", rel, f"paper is {total} pages; limit is {limit}")]
         return []
     body_end = pdfutil.heading_page(pdf, excludes, env=env)
     if body_end is None:
         if pdfutil.have_tool("pdftotext", env=env):
             body_end = total
         else:
-            return [("warning", "paper/main.pdf",
+            return [("warning", rel,
                      f"paper is {total} pages total; the limit of {limit} applies to the main body and the "
                      f"{'/'.join(excludes)} page could not be located (install pdftotext)")]
     if body_end > limit:
-        return [("error", "paper/main.pdf", f"main body is {body_end} pages; limit is {limit} (excluding {', '.join(excludes)})")]
+        return [("error", rel, f"main body is {body_end} pages; limit is {limit} (excluding {', '.join(excludes)})")]
     return []
 
 
@@ -199,9 +319,10 @@ def _check_anonymity(pdir, venue, tex, env):
     if not venue.get("anonymous"):
         return []
     out = []
-    pdf = Path(pdir) / "paper" / "main.pdf"
+    lay = _as_layout(pdir)
+    pdir, pdf, main_rel = lay.root, lay.pdf, lay.rel(lay.main)
     scanned = pdfutil.pdf_text(pdf, env=env) if pdf.exists() else None
-    where = "paper/main.pdf" if scanned is not None else "paper/"
+    where = lay.rel(pdf) if scanned is not None else lay.paper_rel
     haystack = (scanned if scanned is not None else _strip_comments(tex)).lower()
     for name in _git_authors(pdir):
         if name.lower() in haystack:
@@ -213,29 +334,29 @@ def _check_anonymity(pdir, venue, tex, env):
     block = _macro_group(plain, "author")
     if block is not None:
         if not _is_anonymous_author(block):
-            out.append(("error", "paper/main.tex",
+            out.append(("error", main_rel,
                         f"anonymity: author block is not anonymous: {_snippet(block)}"))
     thanks = _macro_group(plain, "thanks")
     if thanks is not None:
-        out.append(("error", "paper/main.tex", f"anonymity: \\thanks{{}} present: {_snippet(thanks)}"))
+        out.append(("error", main_rel, f"anonymity: \\thanks{{}} present: {_snippet(thanks)}"))
     ack = re.search(r"\\section\*?\{\s*acknowledg", plain, re.I)
     if ack:
         line = plain[plain.rfind("\n", 0, ack.start()) + 1:]
         line = line.split("\n", 1)[0]
-        out.append(("error", "paper/main.tex",
+        out.append(("error", main_rel,
                     f"anonymity: acknowledgements section present: {_snippet(line)}"))
     return out
 
 
-def check_generic(pdir, venue, env=None):
-    pdir = Path(pdir)
-    tex = tex_text(pdir)
+def check_generic(pdir, venue, env=None, layout=None):
+    lay = layout or project_layout(pdir)
+    tex = "\n".join(f.read_text(errors="replace") for f in lay.tex)
     out = []
-    out += _check_style(pdir, venue, _strip_comments(tex))
-    out += _check_sections(venue, _strip_comments(tex))
-    out += _check_cites(pdir, _strip_comments(tex))
-    out += _check_pages(pdir, venue, env)
-    out += _check_anonymity(pdir, venue, tex, env)
+    out += _check_style(lay, venue, _strip_comments(tex))
+    out += _check_sections(venue, _strip_comments(tex), lay.paper_rel)
+    out += _check_cites(lay, _strip_comments(tex))
+    out += _check_pages(lay, venue, env)
+    out += _check_anonymity(lay, venue, tex, env)
     return out
 
 
@@ -252,16 +373,17 @@ def load_package_checks(pkg_dir):
     return getattr(mod, "check", None)
 
 
-def pdf_state(pdir):
-    paper = Path(pdir) / "paper"
-    pdf = paper / "main.pdf"
+def pdf_state(pdir, layout=None):
+    lay = layout or project_layout(pdir)
+    pdf, rel = lay.pdf, lay.rel(lay.pdf)
     if not pdf.exists():
+        if lay.bare:
+            return "missing", f"{rel} missing; compile {lay.rel(lay.main)} so page count and PDF text can be checked"
         return "missing", "paper/main.pdf missing; run `rharness paper build` or download the compiled PDF from Overleaf into paper/main.pdf"
-    newest = 0.0
-    for pat in ("*.tex", "*.bib", "*.sty", "*.cls"):
-        for f in paper.rglob(pat):
-            newest = max(newest, f.stat().st_mtime)
+    newest = max((f.stat().st_mtime for f in lay.sources()), default=0.0)
     if newest > pdf.stat().st_mtime:
+        if lay.bare:
+            return "stale", f"{rel} is older than the tex, bib, or style sources; recompile it before trusting page counts"
         return "stale", "paper/main.pdf is older than the tex, bib, or style sources; rebuild it (or re-download from Overleaf) before trusting page counts"
     return "ok", ""
 
@@ -291,15 +413,28 @@ def lint_findings(pdir, env=None, now=None):
     state, msg = pdf_state(pdir)
     if state != "ok":
         out.append(("warning", "paper/main.pdf", msg))
-    for key, iso in venue["deadlines"].items():
-        d = days_until(iso, now=now)
-        if d < 0:
-            out.append(("warning", "CHARTER.md", f"venue {name} {key} deadline {iso[:10]} passed {-d} days ago; `rharness venue change` or `unlock`"))
+    out += _passed_deadlines(name, venue, now, "CHARTER.md", "; `rharness venue change` or `unlock`")
     if locked:
         d = days_until(venue["deadlines"][venue["primary"]], now=now)
         if 0 <= d <= NEAR_DAYS and _success_not_yet(pdir):
             out.append(("warning", "CHARTER.md", f"venue {name} locked and the {venue['primary']} deadline is in {d} days but the success criterion is still NOT YET"))
-    findings = check_generic(pdir, venue, env=env)
+    findings = check_generic(pdir, venue, env=env) + _package_findings(pkg, pdir, venue)
+    for sev, path, m in findings:
+        out.append((sev if locked else "warning", path, m))
+    return out
+
+
+def _passed_deadlines(name, venue, now, path, hint=""):
+    out = []
+    for key, iso in venue["deadlines"].items():
+        d = days_until(iso, now=now)
+        if d < 0:
+            out.append(("warning", path, f"venue {name} {key} deadline {iso[:10]} passed {-d} days ago{hint}"))
+    return out
+
+
+def _package_findings(pkg, pdir, venue):
+    findings = []
     fn = load_package_checks(pkg)
     if fn is not None:
         try:
@@ -313,6 +448,19 @@ def lint_findings(pdir, env=None, now=None):
             else:
                 findings.append(("warning", "checks.py",
                                  f"package checks returned a malformed finding: {repr(item)[:80]}"))
-    for sev, path, m in findings:
-        out.append((sev if locked else "warning", path, m))
-    return out
+    return findings
+
+
+def bare_findings(root, venue, pkg, main=None, env=None, now=None):
+    """Venue checks on a LaTeX directory with no rharness files, severity as returned.
+
+    Raises VenueError when no main file can be chosen.
+    """
+    root = Path(root)
+    lay = bare_layout(root, main)
+    out = []
+    state, msg = pdf_state(root, lay)
+    if state != "ok":
+        out.append(("warning", lay.rel(lay.pdf), msg))
+    out += _passed_deadlines(venue["name"], venue, now, "")
+    return out + check_generic(root, venue, env=env, layout=lay) + _package_findings(pkg, root, venue)

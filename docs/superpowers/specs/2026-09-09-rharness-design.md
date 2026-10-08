@@ -302,9 +302,6 @@ overrides the `lint.toml` value.
 ## 9. Open decisions deferred past version one
 
 - Plugin sources outside this repo (`add github:user/repo`).
-- `rharness lint --venue <name> <dir>` on a bare LaTeX repository with no
-  other rharness files. Section 10.2 keeps the check entry point on a bare
-  directory so this is a CLI change, not a check rewrite.
 - Network metadata verification of references (Crossref, OpenAlex) and any
   LLM judgment of claim support.
 - Two venues on one project. Per-plugin `SKILL.md` rendering.
@@ -404,8 +401,8 @@ def check(project_dir, venue):
 ```
 
 It takes a bare directory, not a Workspace or Project object, so the same
-code can later run on a LaTeX repository with no other rharness files
-(section 9). `lint` loads it with `importlib` from the cached package.
+code runs on a LaTeX repository with no other rharness files (section
+10.11). `lint` loads it with `importlib` from the cached package.
 
 The review-form text for archetype K already exists for two venues in the
 review-panel plugin (`panels/`, `prompts/`); venue packages reference or
@@ -564,6 +561,35 @@ Generic checks, all local, parameterised by `venue.json`:
 `iclr2027` is metadata only: the `venue.json` above, the review form, and
 no `checks.py`.
 
+### 10.11 `lint --venue` on a bare LaTeX directory
+
+`rharness lint --venue <name> [dir] [--main FILE]` runs the generic set and
+the package's `checks.py` on `dir` (default: the current directory) and
+nothing else: no project checks, no workspace checks, no venue block. The
+name resolves as in section 10.3, against the `venue_index` of the
+enclosing workspace's `lint.toml` when there is one, else the default; a
+source outside the index needs `--yes`. A cached package older than the TTL
+is re-fetched, and the cached copy is used when that fails.
+
+Layout, all relative to `dir`:
+
+- Main file: `--main`, else `main.tex` when it has `\documentclass`, else
+  the one `.tex` file that does. Several candidates and no `main.tex` is a
+  usage error (exit 2) that lists them.
+- Tex sources: the main file and every file reached from it through
+  `\input`, `\include`, or `\subfile`, resolved against the main file's
+  directory and never outside `dir`. Other `.tex` files are not read, so a
+  second paper in the same repository cannot produce findings.
+- Bib files: every name in `\bibliography{...}` and `\addbibresource{...}`
+  in those sources. None named is a warning; a named file missing is a
+  warning and skips the key check, since its keys are unknown.
+- PDF: the main file's path with `.pdf`.
+
+Findings keep the severity returned, as when locked, and paths are relative
+to `dir`. Deadline-passed rows apply; the near-deadline `NOT YET` row does
+not, since there is no charter. Inside a project, `paper/` keeps its fixed
+names (`main.tex`, `references.bib`, `main.pdf`).
+
 ## 11. Paper build
 
 rharness does not bundle a TeX engine. `paper build` runs inside a project
@@ -670,3 +696,7 @@ needed, and `doctor` says so instead of insisting on TinyTeX.
   gains `fail_on` (`warning` default, or `error`) and `lint` gains
   `--fail-on`; section 7 states the exit status and section 10.7 how the two
   venue states differ under each setting. The default is unchanged.
+- 2026-10-07: standalone `lint --venue` moved out of section 9 into the new
+  section 10.11. The generic checks take a layout (main file, tex sources,
+  bib files, PDF) instead of fixed `paper/` names; projects keep the fixed
+  names and their messages are unchanged.

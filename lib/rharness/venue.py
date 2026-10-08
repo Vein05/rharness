@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from .manifest import today
-from .plugin import Plugin, PluginNotFound, capability_summary, confirm, fetch_plugin
+from .plugin import Plugin, PluginNotFound, capability_summary, confirm, fetch_plugin, fetched_commit, source_info
 from .venuemeta import days_until, primary_deadline
 from .venuepkg import (_cached_index, _keep_existing, _project_ctx, _record_paper_file, _under_index,  # noqa: F401
                        _upsert_agents, _validate_package, fetch_index, fetch_package, fetch_templates,
@@ -77,6 +77,33 @@ def cmd_add(ws, pdir, tokens, cfg, yes=False, dry_run=False, refresh=False, note
         print(l)
     print(f"Next: `rharness venue` for status and checks; `rharness venue lock` when the paper is committed to {plugin.name}")
     return 0
+
+
+def bare_package(tokens, cfg, yes=False):
+    """(plugin, venue) for `lint --venue`, or None after printing why the source needs --yes.
+
+    A cached package past the TTL is re-fetched; when that fails the cached copy is used,
+    because a refresh problem must never block lint.
+    """
+    spec, hint, from_index, ref = resolve_source(tokens, cfg)
+    cache = package_dir(hint)
+    info = source_info(cache)
+    plugin = None
+    if (cache / "plugin.json").exists() and info.get("spec") == spec and _stale(info):
+        try:
+            plugin = fetch_package(spec, hint, refresh=True)
+        except VenueError:
+            plugin = None
+    if plugin is None:
+        plugin = fetch_package(spec, hint)
+    venue = load_venue(plugin.dir)
+    if not from_index and not yes:
+        commit = fetched_commit(plugin.dir)
+        print(f"Venue package {plugin.name} from {spec}" + (f" (commit {commit[:12]})" if commit else ""))
+        print(f"  checks.py: {'yes, runs in-process during this lint' if (plugin.dir / 'checks.py').exists() else 'no'}")
+        print("Not run. Re-run with --yes (before the subcommand) to accept this source.")
+        return None
+    return plugin, venue
 
 
 def _age_days(iso: str) -> int:

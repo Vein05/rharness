@@ -204,6 +204,19 @@ The page check reads `paper/main.pdf`. Build it with `rharness paper build`
 pulled through `tlmgr`), or download the compiled PDF from Overleaf into
 `paper/main.pdf`. Neither poppler nor TeX is required to read it.
 
+The same checks run on a LaTeX repository with no rharness files, such as an
+Overleaf git clone:
+
+```sh
+rharness lint --venue iclr2027 ~/papers/my-submission
+```
+
+The main file is `main.tex`, or the one `.tex` file with `\documentclass`
+(`--main FILE` picks one). Only files reached through `\input`, `\include`,
+or `\subfile` are scanned, bib files come from `\bibliography` or
+`\addbibresource`, and the PDF is the main file's name with `.pdf`. Findings
+keep their severity, as if the venue were locked.
+
 Off a TTY, `change`, `unlock`, and `remove` refuse without `--yes` and say so
 in words an agent can relay. From the workspace root, pass `--project <slug>`.
 Venue packages are documented in `venues/README.md`.
@@ -281,7 +294,7 @@ rharness owns only the text between `<!-- rharness:begin ... -->` and
 | `rharness remove <plugin>` | Uninstall a plugin; modified files are kept and listed |
 | `rharness list` | Plugins with origin, install status, and source |
 | `rharness plugin new <name> [--dir D]` | Scaffold a plugin directory |
-| `rharness lint [dir] [--json] [--fail-on error\|warning]` | Check projects against the rules; exit 1 on findings at or above `fail_on` (default `warning`) |
+| `rharness lint [dir] [--json] [--fail-on error\|warning] [--venue NAME [--main FILE]]` | Check projects against the rules; exit 1 on findings at or above `fail_on` (default `warning`); `--venue` runs only that venue's checks on a bare LaTeX directory |
 | `rharness venue add\|change\|lock\|unlock\|check\|update\|remove\|list [--project P]` | Attach, inspect, or detach a project's submission target |
 | `rharness paper build` | Build `paper/main.pdf` with latexmk |
 | `rharness doctor` | Check python, git, git-lfs, rtk, and hook registration |

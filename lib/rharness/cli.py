@@ -74,6 +74,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="one JSON object per finding")
     s.add_argument("--fail-on", choices=("error", "warning"),
                    help="lowest severity that makes lint exit 1 (default: lint.toml fail_on, else warning)")
+    s.add_argument("--venue", metavar="NAME",
+                   help="run only the venue checks for NAME on dir, a LaTeX directory with no rharness files")
+    s.add_argument("--main", metavar="FILE", help="with --venue: the main .tex file (default: found by \\documentclass)")
 
     sub.add_parser("doctor", help="check the machine and workspace")
 
@@ -299,6 +302,11 @@ def run_lint(args):
     from .lint import (FAIL_ON, exit_code, format_findings, format_json, lint_project,
                        lint_workspace, writing_template_region)
     from .lintcfg import load_lint_config
+    if args.venue:
+        return _lint_bare(args)
+    if args.main:
+        err("--main needs --venue")
+        return 2
     target = Path(args.dir).resolve() if args.dir else None
     single = target and ((target / "CHARTER.md").exists() or (target / "AGENTS.md").exists()) \
         and not (target / MANIFEST_REL).exists()
@@ -324,6 +332,34 @@ def run_lint(args):
                 pass  # a refresh problem must never block lint
             findings += lint_project(pdir, cfg, writing_template_region())
         findings += lint_workspace(ws, cfg)
+    print(format_json(findings) if args.json else format_findings(findings))
+    return exit_code(findings, fail_on)
+
+
+def _lint_bare(args):
+    from . import venue as V, venuecheck
+    from .lint import FAIL_ON, Finding, exit_code, format_findings, format_json
+    from .lintcfg import load_lint_config
+    target = Path(args.dir or ".").resolve()
+    if not target.is_dir():
+        err(f"{target} is not a directory")
+        return 2
+    root = find_root(target)
+    cfg = load_lint_config(root / "lint.toml" if root else None)
+    fail_on = args.fail_on or cfg["fail_on"]
+    if fail_on not in FAIL_ON:
+        err(f"lint.toml: fail_on = {fail_on!r}; choose from {', '.join(FAIL_ON)}")
+        return 2
+    try:
+        got = V.bare_package(args.venue.split(), cfg, yes=args.yes)
+        if got is None:
+            return 1
+        plugin, venue = got
+        rows = venuecheck.bare_findings(target, venue, plugin.dir, main=args.main)
+    except V.VenueError as e:
+        err(str(e))
+        return 2
+    findings = [Finding(sev, target.name, path, msg) for sev, path, msg in rows]
     print(format_json(findings) if args.json else format_findings(findings))
     return exit_code(findings, fail_on)
 
