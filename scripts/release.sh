@@ -12,6 +12,8 @@ git archive --format=tar.gz --prefix="$NAME/" -o "dist/$NAME.tar.gz" HEAD
 cat dist/SHA256SUMS
 git tag -a "$TAG" -m "rharness $VERSION" 2>/dev/null || echo "tag $TAG exists"
 git push -q origin "$TAG"
-gh release create "$TAG" "dist/$NAME.tar.gz" dist/SHA256SUMS --title "rharness $VERSION" --notes "See README.md and docs/. Verify with SHA256SUMS." \
+NOTES="changelog/v$VERSION.md"
+[ -f "$NOTES" ] || { NOTES=dist/NOTES.md; echo "See README.md and docs/. Verify with SHA256SUMS." > "$NOTES"; }
+gh release create "$TAG" "dist/$NAME.tar.gz" dist/SHA256SUMS --title "rharness $VERSION" --notes-file "$NOTES" \
   || gh release upload "$TAG" "dist/$NAME.tar.gz" dist/SHA256SUMS --clobber
 echo "released $TAG"
