@@ -56,3 +56,15 @@ def test_deadline_math():
     key, iso = vm.primary_deadline(GOOD)
     assert key == "full" and iso.startswith("2026-09-25")
     assert vm.parse_deadline("2026-09-25T23:59:00").tzinfo is not None
+
+
+def test_validate_author_block():
+    from rharness.venuemeta import validate
+    import json
+    from pathlib import Path
+    base = json.loads((Path(__file__).parent / "fixtures" / "venues" / "testconf2026" / "venue.json").read_text())
+    assert validate(dict(base, author_block={"hidden_if": r"\\usepackage\[review\]\{acl\}"})) == []
+    assert validate(dict(base, author_block={"hidden_unless": r"\\iclrfinalcopy"})) == []
+    assert any("author_block" in e for e in validate(dict(base, author_block={})))
+    assert any("author_block" in e for e in validate(dict(base, author_block={"hidden_if": "(", })))
+    assert any("author_block" in e for e in validate(dict(base, author_block={"hidden_if": "a", "hidden_unless": "b"})))

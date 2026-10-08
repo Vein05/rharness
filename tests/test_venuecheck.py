@@ -105,10 +105,14 @@ def test_page_count_paths(venue_project, tmp_path):
     msgs = _msgs(VC.check_generic(p, venue, env={"PATH": "/nonexistent"}))
     assert any("3 pages" in m and m.startswith("warning") and "main body" in m for m in msgs)
     b = tmp_path / "bin"; b.mkdir()
-    (b / "pdftotext").write_text("#!/bin/sh\nprintf 'body\\n\\fbody 2\\n\\fReferences\\n'\n"); (b / "pdftotext").chmod(0o755)
+    (b / "pdftotext").write_text("#!/bin/sh\nprintf 'body\\n\\fbody 2\\n\\fmore body\\nReferences\\n'\n"); (b / "pdftotext").chmod(0o755)
     msgs = _msgs(VC.check_generic(p, venue, env={"PATH": str(b)}))
-    # the References heading is on page 3, and the heading page counts as body: 3 > 2 is an error
+    # body text continues onto page 3 before References: 3 > 2 is an error
     assert any("main body is 3 pages" in m and m.startswith("error") for m in msgs), msgs
+    (b / "pdftotext").write_text("#!/bin/sh\nprintf 'body\\n\\fbody 2\\n\\f017\\n\\nReferences\\n'\n")
+    msgs = _msgs(VC.check_generic(p, venue, env={"PATH": str(b)}))
+    # References opens page 3 (after a line number): the body is pages 1-2, within the limit
+    assert not any("main body" in m for m in msgs), msgs
     (b / "pdftotext").write_text("#!/bin/sh\nprintf 'body\\n\\fReferences\\n\\fAppendix\\n'\n")
     msgs = _msgs(VC.check_generic(p, venue, env={"PATH": str(b)}))
     assert not any("main body" in m for m in msgs), msgs  # body ends on page 2: within the limit
@@ -221,3 +225,46 @@ def test_fail_on_error_separates_targeted_from_locked(venue_project, ws):
     assert code == 1, out
     assert any(json.loads(l)["severity"] == "error" and "missing2021" in l
                for l in out.splitlines() if l.startswith("{")), out
+
+
+def _anon_msgs(p, venue, tex):
+    (p / "paper" / "main.tex").write_text(tex)
+    return [m for m in _msgs(VC.check_generic(p, venue, env={"PATH": "/nonexistent"})) if "anonymity" in m]
+
+
+def test_author_block_hidden_if_style_option(venue_project):
+    p, venue, _ = venue_project
+    v = dict(venue, author_block={"hidden_if": r"\\usepackage\[[^\]]*\breview\b[^\]]*\]\{testconf2026\}"})
+    named = TEX.replace(r"\author{Anonymous}", r"\author{rharness-test\thanks{funded} \\ MIT}")
+    review = named.replace(r"\usepackage{testconf2026}", r"\usepackage[review]{testconf2026}")
+    assert _anon_msgs(p, v, review) == []
+    anon = _anon_msgs(p, v, named)
+    assert any("author block" in m for m in anon) and any("thanks" in m for m in anon), anon
+    assert any("git author name 'rharness-test'" in m for m in anon), anon
+    leak = review.replace("We cite", "Work by rharness-test. We cite")
+    assert any("git author name 'rharness-test'" in m for m in _anon_msgs(p, v, leak))
+    shown = named.replace("We cite", "Load it with \\verb|\\usepackage[review]{testconf2026}|. We cite")
+    assert any("author block" in m for m in _anon_msgs(p, v, shown))  # the body example is not the load
+
+
+def test_author_block_hidden_unless_final_copy(venue_project):
+    p, venue, _ = venue_project
+    v = dict(venue, author_block={"hidden_unless": r"\\iclrfinalcopy\b"})
+    named = TEX.replace(r"\author{Anonymous}", r"\author{Jane Realname}")
+    assert _anon_msgs(p, v, named) == []
+    final = named.replace(r"\begin{document}", "\\iclrfinalcopy\n\\begin{document}")
+    assert any("author block" in m for m in _anon_msgs(p, v, final))
+    commented = named.replace(r"\begin{document}", "% \\iclrfinalcopy\n\\begin{document}")
+    assert _anon_msgs(p, v, commented) == []
+
+
+
+def test_style_line_names_the_venue_preamble_line(tmp_path):
+    from rharness.venuemeta import style_line, validate
+    venue = {"template": {"repo": "x/y", "ref": "main", "files": ["acl.sty"]}}
+    assert style_line(venue, "acl") == r"\usepackage{acl}"
+    venue["style_line"] = r"\usepackage[review]{acl}"
+    msg = VC._check_style(tmp_path, venue, "\\documentclass{article}\n")[0][2]
+    assert r"add \usepackage[review]{acl}" in msg
+    assert VC._check_style(tmp_path, venue, "\\usepackage[review]{acl}\n") == []
+    assert any("style_line" in e for e in validate({"style_line": ""}))

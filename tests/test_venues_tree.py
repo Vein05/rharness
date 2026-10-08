@@ -53,3 +53,37 @@ def test_iclr2027_package_shape():
     assert v["template"]["repo"] == "ICLR/Master-Template" and len(v["template"]["ref"]) == 40
     assert any(f.endswith(".sty") for f in v["template"]["files"])
     assert any(s["kind"] == "cfp" for s in v["sources"])
+
+
+@pytest.mark.parametrize("name,deadline", [("naacl2027", "2026-10-12T23:59:00-12:00"),
+                                           ("acl2027", "2027-01-04T23:59:00-12:00")])
+def test_arr_package_shape(name, deadline):
+    d = VENUES / name
+    v = json.loads((d / "venue.json").read_text())
+    assert v["deadlines"][v["primary"]] == deadline
+    assert v["page_limit"]["main"] == 8 and "limitations" in v["page_limit"]["excludes"]
+    assert "limitations" in v["required_sections"] and v["anonymous"] is True
+    assert v["template"]["repo"] == "acl-org/acl-style-files"
+    assert v["template"]["files"] == ["acl.sty", "acl_natbib.bst"]
+    assert len(v["template"]["ref"]) == 40
+    assert (d / "project-files" / "research" / f"venue-{name}.md").exists()
+    assert set(json.loads((d / "sources.lock.json").read_text())) == {s["url"] for s in v["sources"]}
+
+
+@pytest.mark.parametrize("name", ["naacl2027", "acl2027"])
+def test_arr_checks_py_wants_review_mode(name, tmp_path):
+    from rharness.venuecheck import author_block_hidden, load_package_checks, _strip_comments
+    v = json.loads((VENUES / name / "venue.json").read_text())
+    fn = load_package_checks(VENUES / name)
+    (tmp_path / "paper").mkdir()
+    main = tmp_path / "paper" / "main.tex"
+    main.write_text("\\documentclass[11pt]{article}\n\\usepackage{acl}\n")
+    rows = fn(tmp_path, v)
+    assert len(rows) == 1 and rows[0][0] == "warning" and rows[0][1] == "paper/main.tex", rows
+    main.write_text("\\documentclass[11pt]{article}\n\\usepackage[review]{acl}\n% \\usepackage{acl}\n")
+    assert fn(tmp_path, v) == []
+    assert author_block_hidden(v, _strip_comments(main.read_text()))
+    main.write_text("\\usepackage[review]{acl}\n\\begin{document}\n\\begin{verbatim}\n\\usepackage{acl}\n\\end{verbatim}\n")
+    assert fn(tmp_path, v) == []
+    main.write_text("\\usepackage[final]{acl}\n")
+    assert not author_block_hidden(v, _strip_comments(main.read_text())) and len(fn(tmp_path, v)) == 1

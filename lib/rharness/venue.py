@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .manifest import today
 from .plugin import Plugin, PluginNotFound, capability_summary, confirm, fetch_plugin, fetched_commit, source_info
-from .venuemeta import days_until, primary_deadline
+from .venuemeta import days_until, primary_deadline, style_line
 from .venuepkg import (_cached_index, _keep_existing, _project_ctx, _record_paper_file, _under_index,  # noqa: F401
                        _upsert_agents, _validate_package, fetch_index, fetch_package, fetch_templates,
                        install_package, remove_package, resolve_source, template_blobs, INDEX_NAME_RE)
@@ -67,7 +67,7 @@ def cmd_add(ws, pdir, tokens, cfg, yes=False, dry_run=False, refresh=False, note
             break
     print("  These findings are expected to be open until the agent acts on them:")
     if stem:
-        print(f"    add \\usepackage{{{stem}}} at the % rharness:venue-style line in paper/main.tex")
+        print(f"    add {style_line(venue, stem)} at the % rharness:venue-style line in paper/main.tex")
         main = Path(pdir) / "paper" / "main.tex"
         if main.exists() and "% rharness:venue-style" not in main.read_text(errors="replace"):
             print("    (paper/main.tex has no % rharness:venue-style marker; add the "

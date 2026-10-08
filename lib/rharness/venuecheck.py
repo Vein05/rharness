@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import bibcheck, gitutil, pdfutil
 from .venue import load_venue, package_dir, read_block, VenueError
-from .venuemeta import days_until
+from .venuemeta import days_until, style_line
 
 SECTION_RE = r"\\(?:section|chapter|subsection)\*?\s*\{[^}]*%s"
 INPUT_RE = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}")
@@ -210,7 +210,7 @@ def _check_style(pdir, venue, tex):
     marker = main.exists() and "% rharness:venue-style" in main.read_text(errors="replace")
     where = "at the % rharness:venue-style line" if marker else "in the preamble"
     return [("error", lay.rel(main),
-             f"{main.name} does not load {stem}; add \\usepackage{{{stem}}} {where}")]
+             f"{main.name} does not load {stem}; add {style_line(venue, stem)} {where}")]
 
 
 def _check_sections(venue, tex, paper_rel="paper/"):
@@ -261,7 +261,7 @@ def _check_pages(pdir, venue, env):
         if total > limit:
             return [("error", rel, f"paper is {total} pages; limit is {limit}")]
         return []
-    body_end = pdfutil.heading_page(pdf, excludes, env=env)
+    body_end = pdfutil.body_end(pdf, excludes, env=env)
     if body_end is None:
         if pdfutil.have_tool("pdftotext", env=env):
             body_end = total
@@ -308,28 +308,41 @@ def _is_anonymous_author(block: str) -> bool:
     return all(w in ANON_WORDS for w in words)
 
 
+def author_block_hidden(venue, plain_tex: str) -> bool:
+    """True when the venue's style hides \\author and \\thanks in this build (venue.json author_block)."""
+    rule = venue.get("author_block") or {}
+    preamble = plain_tex.split("\\begin{document}", 1)[0]  # options shown in the body are not in effect
+    if "hidden_if" in rule:
+        return re.search(rule["hidden_if"], preamble) is not None
+    if "hidden_unless" in rule:
+        return re.search(rule["hidden_unless"], preamble) is None
+    return False
+
+
 def _check_anonymity(pdir, venue, tex, env):
     if not venue.get("anonymous"):
         return []
     out = []
     lay = _as_layout(pdir)
     pdir, pdf, main_rel = lay.root, lay.pdf, lay.rel(lay.main)
+    plain = _strip_comments(tex)
+    hidden = author_block_hidden(venue, plain)
     scanned = pdfutil.pdf_text(pdf, env=env) if pdf.exists() else None
     where = lay.rel(pdf) if scanned is not None else lay.paper_rel
-    haystack = (scanned if scanned is not None else _strip_comments(tex)).lower()
+    source = _strip_groups(_strip_groups(plain, "author"), "thanks") if hidden else plain
+    haystack = (scanned if scanned is not None else source).lower()
     for name in _git_authors(pdir):
         if name.lower() in haystack:
             out.append(("error", where, f"anonymity: git author name '{name}' appears in the paper text"))
     for remote in _git_remotes(pdir):
         if remote.lower() in haystack:
             out.append(("error", where, f"anonymity: git remote '{remote}' appears in the paper text"))
-    plain = _strip_comments(tex)
-    block = _macro_group(plain, "author")
+    block = None if hidden else _macro_group(plain, "author")
     if block is not None:
         if not _is_anonymous_author(block):
             out.append(("error", main_rel,
                         f"anonymity: author block is not anonymous: {_snippet(block)}"))
-    thanks = _macro_group(plain, "thanks")
+    thanks = None if hidden else _macro_group(plain, "thanks")
     if thanks is not None:
         out.append(("error", main_rel, f"anonymity: \\thanks{{}} present: {_snippet(thanks)}"))
     ack = re.search(r"\\section\*?\{\s*acknowledg", plain, re.I)

@@ -1,0 +1,21 @@
+{
+  "venue": "naacl",
+  "cycle": "2027",
+  "name": "naacl2027",
+  "revision": "2026-10-07",
+  "deadlines": {"submission": "2026-10-12T23:59:00-12:00", "commitment": "2026-12-23T23:59:00-12:00"},
+  "primary": "submission",
+  "page_limit": {"main": 8, "excludes": ["limitations", "ethical considerations", "ethics statement", "references", "appendix"]},
+  "anonymous": true,
+  "author_block": {"hidden_if": "\\\\usepackage\\s*\\[[^\\]]*\\breview\\b[^\\]]*\\]\\s*\\{acl\\}"},
+  "template": {"repo": "acl-org/acl-style-files", "ref": "d5adc823ff0f80f98c80405ca0ab66c68e684409", "files": ["acl.sty", "acl_natbib.bst"]},
+  "style_line": "\\usepackage[review]{acl}",
+  "required_sections": ["abstract", "introduction", "limitations"],
+  "sources": [
+    {"kind": "cfp", "url": "https://2027.naacl.org/calls/main_conference_papers/", "retrieved": "2026-10-07"},
+    {"kind": "arr-cfp", "url": "https://aclrollingreview.org/cfp", "retrieved": "2026-10-07"},
+    {"kind": "arr-dates", "url": "https://aclrollingreview.org/dates", "retrieved": "2026-10-07"},
+    {"kind": "template", "url": "https://github.com/acl-org/acl-style-files", "retrieved": "2026-10-07"},
+    {"kind": "reviewer-form", "url": "https://aclrollingreview.org/reviewform", "retrieved": "2026-10-07"}
+  ]
+}
