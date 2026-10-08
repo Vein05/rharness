@@ -149,7 +149,10 @@ contract fields it can read: that the kill criterion states a threshold,
 that the scoring spec keeps its control and ceiling rows, that code has a
 spec, that recorded artifacts are unchanged, and that `paper/references.bib`
 is sound: cited keys exist, no entry is malformed or duplicated by key or
-DOI, and nothing in it goes uncited. It does not judge the science.
+DOI, and nothing in it goes uncited. It also caps the words a fresh session
+reads first: CHARTER.md, the newest handoff, the last changelog entry, and
+the project brief (`*_max_words` in `lint.toml`; over the cap warns, over
+twice it fails). It does not judge the science.
 
 ```sh
 rharness lint

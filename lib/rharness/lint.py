@@ -54,6 +54,58 @@ def _read(path: Path) -> str:
         return path.read_text(errors="replace")
 
 
+def word_count(text: str) -> int:
+    """Words a reader sees: HTML comments dropped, tokens without a letter or digit skipped."""
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    return sum(1 for w in text.split() if re.search(r"\w", w))
+
+
+def last_entry(text: str):
+    """(heading, body) of the last `## ` section, or (None, text) when there is none."""
+    parts = re.split(r"^## ", text, flags=re.M)
+    if len(parts) < 2:
+        return None, text
+    head, _, body = parts[-1].partition("\n")
+    return head.strip(), body
+
+
+def _word_cap(cfg, key, n, what):
+    """(severity, message) when n words is over cfg[key]; error over twice the cap. 0 disables."""
+    cap = cfg[key]
+    if not cap or n <= cap:
+        return None
+    sev = "error" if n > 2 * cap else "warning"
+    extra = ", over twice the cap" if sev == "error" else ""
+    return sev, f"{what} is {n} words; cap is {cap} (lint.toml {key}{extra}); cut it to what the next session needs"
+
+
+def word_cap_findings(pdir: Path, cfg: dict):
+    """Caps on the files a fresh session reads first, and on the brief they make."""
+    from .brief import newest_dated, project_brief
+    out = []
+
+    def add(key, n, what, path):
+        got = _word_cap(cfg, key, n, what)
+        if got:
+            out.append((got[0], path, got[1]))
+
+    charter = pdir / "CHARTER.md"
+    if charter.exists():
+        add("charter_max_words", word_count(_read(charter)), "CHARTER.md", "CHARTER.md")
+    h = newest_dated(pdir / "handoff")
+    if h:
+        add("handoff_max_words", word_count(_read(h)), f"newest handoff handoff/{h.name}", f"handoff/{h.name}")
+    c = newest_dated(pdir / "changelog")
+    if c:
+        head, body = last_entry(_read(c))
+        what = f"last changelog entry \"{head}\"" if head else f"changelog/{c.name}"
+        add("changelog_entry_max_words", word_count(body), what, f"changelog/{c.name}")
+    if cfg["brief_max_words"]:
+        add("brief_max_words", word_count(project_brief(pdir, cfg, include_lint=False)),
+            f"`rharness brief {pdir.name}` (without its lint section)", "")
+    return out
+
+
 def writing_template_region():
     return get_region((BASE_DIR / "project" / "paper" / "writing.md").read_text(), "base")
 
@@ -159,6 +211,9 @@ def lint_project(pdir: Path, cfg: dict, template_region=None, venue_checks=True)
             W("paper/writing.md", "paper/writing.md has no rharness base region; generic sections cannot be checked")
         elif region != template_region:
             W("paper/writing.md", "paper/writing.md generic section differs from the template")
+
+    for sev, path, msg in word_cap_findings(pdir, cfg):
+        (E if sev == "error" else W)(path, msg)
 
     from . import venuecheck
     if not venuecheck.read_block(pdir):

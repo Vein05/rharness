@@ -71,7 +71,7 @@ def authoritative_docs(pdir: Path):
     return rows
 
 
-def project_brief(pdir: Path, cfg: dict, lines: int = 80) -> str:
+def project_brief(pdir: Path, cfg: dict, lines: int = 80, include_lint: bool = True) -> str:
     slug = pdir.name
     pm_path = pdir / PROJECT_MANIFEST_REL
     title = Manifest.load(pm_path).ctx.get("title", slug) if pm_path.exists() else slug
@@ -118,6 +118,8 @@ def project_brief(pdir: Path, cfg: dict, lines: int = 80) -> str:
     n = len(parse_ledger(_read(ledger))) if ledger.exists() else 0
     out += [f"## Provenance: {n} recorded artifact" + ("" if n == 1 else "s") +
             f" in {LEDGER_REL.as_posix()}; record frozen traces with `rharness hash`", ""]
+    if not include_lint:
+        return "\n".join(out)
     findings = lint_project(pdir, cfg, writing_template_region())
     errors = sum(1 for f in findings if f.severity == "error")
     out += [f"## Lint: {errors} errors, {len(findings) - errors} warnings (structure and contract fields; not the science)"]

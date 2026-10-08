@@ -222,7 +222,12 @@ Plugins in version one:
 
 Reads `lint.toml` for thresholds. Defaults: handoff may be at most 1 day
 older than the newest commit; dirty-tree warning above 0 files; changelog
-required for every commit day in the last 14 days.
+required for every commit day in the last 14 days; word caps of 600
+(CHARTER.md), 600 (newest handoff), 400 (last `## ` entry of the newest
+changelog file), and 1500 (`rharness brief <project>` without its lint
+section). Words exclude HTML comments and tokens with no letter or digit.
+The caps are provisional: set from the scaffold and this repository's own
+changelog, not yet from a dogfood project.
 
 Per project (each subdirectory with `CHARTER.md`):
 
@@ -245,6 +250,7 @@ Per project (each subdirectory with `CHARTER.md`):
 | `spec/scoring.md` has `control` and `ceiling` rows | error |
 | Experiment reports (archetype B) exist while `spec/scoring.md` is still `proposed` | warning |
 | Source files exist but no component spec besides `scoring.md` | warning |
+| Word cap exceeded on CHARTER.md, the newest handoff, the last changelog entry, or the project brief | warning; error over twice the cap; `0` disables |
 | Bibliography, for a project with no venue and a `paper/references.bib`: citation keys resolve, duplicate keys, malformed entries (not closed, no key, unreadable fields, no title), the same DOI under two keys, entries never cited (one summary row; none when `\nocite{*}`) | warning |
 | Venue checks (section 10.7): generic set from the binary plus the package's `checks.py`; severity as returned when locked, downgraded to warning when targeted | package-defined |
 | Venue locked, primary deadline within 14 days, success criterion still `NOT YET` | warning |
@@ -708,3 +714,9 @@ needed, and `doctor` says so instead of insisting on TinyTeX.
   BibTeX parser, malformed entries, duplicate DOIs, and uncited entries,
   added to the venue generic set and, as warnings, to every project with no
   venue. Projects with a venue get them once, through the venue checks.
+- 2026-10-07: word caps on orientation files (after viberesearch's
+  per-file caps): `charter_max_words`,
+  `handoff_max_words`, `changelog_entry_max_words`, `brief_max_words` in
+  `lint.toml`, warning over the cap and error over twice it. This measures
+  the context cost the eleven archetypes may impose; the defaults are to be
+  revisited after a dogfood project.

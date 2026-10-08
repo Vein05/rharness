@@ -4,3 +4,8 @@ changelog_window_days = 14
 dirty_tree_warn_above = 0
 # Lowest severity that makes `rharness lint` exit 1: warning or error.
 fail_on = "warning"
+# Word caps on what a fresh session reads first (warning over, error over 2x; 0 disables).
+charter_max_words = 600
+handoff_max_words = 600
+changelog_entry_max_words = 400
+brief_max_words = 1500
