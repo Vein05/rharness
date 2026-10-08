@@ -23,6 +23,7 @@ RELATIVE_DATE_RE = re.compile(
 RELATIVE_DATE_SCOPE = ["CHARTER.md", "AGENTS.md", "spec", "handoff"]
 ROW_RE = re.compile(r"^\| `([^`/]+)/` \|", re.M)
 CLUTTER_RE = re.compile(r"(\.zip|\.pdf)$|^tmp", re.I)
+FAIL_ON = ("error", "warning")
 
 
 @dataclass
@@ -204,6 +205,13 @@ def format_findings(findings):
     errors = sum(1 for f in findings if f.severity == "error")
     lines.append(f"Summary: {errors} errors, {len(findings) - errors} warnings")
     return "\n".join(lines)
+
+
+def exit_code(findings, fail_on="warning"):
+    """1 when any finding is at or above fail_on: "warning" fails on anything, "error" on errors only."""
+    if fail_on == "error":
+        return 1 if any(f.severity == "error" for f in findings) else 0
+    return 1 if findings else 0
 
 
 def format_json(findings):

@@ -72,6 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("lint", help="check projects against the rules")
     s.add_argument("dir", nargs="?")
     s.add_argument("--json", action="store_true", help="one JSON object per finding")
+    s.add_argument("--fail-on", choices=("error", "warning"),
+                   help="lowest severity that makes lint exit 1 (default: lint.toml fail_on, else warning)")
 
     sub.add_parser("doctor", help="check the machine and workspace")
 
@@ -294,20 +296,27 @@ def run_doctor(args):
 
 
 def run_lint(args):
-    from .lint import (format_findings, format_json, lint_project, lint_workspace,
-                       writing_template_region)
+    from .lint import (FAIL_ON, exit_code, format_findings, format_json, lint_project,
+                       lint_workspace, writing_template_region)
     from .lintcfg import load_lint_config
     target = Path(args.dir).resolve() if args.dir else None
-    findings = []
-    if target and ((target / "CHARTER.md").exists() or (target / "AGENTS.md").exists()) \
-            and not (target / MANIFEST_REL).exists():
+    single = target and ((target / "CHARTER.md").exists() or (target / "AGENTS.md").exists()) \
+        and not (target / MANIFEST_REL).exists()
+    if single:
         root = find_root(target.parent)
         cfg = load_lint_config(root / "lint.toml" if root else None)
+    else:
+        ws = Workspace.open(start=target, override=args.workspace)
+        cfg = load_lint_config(ws.root / "lint.toml")
+    fail_on = args.fail_on or cfg["fail_on"]
+    if fail_on not in FAIL_ON:
+        err(f"lint.toml: fail_on = {fail_on!r}; choose from {', '.join(FAIL_ON)}")
+        return 2
+    findings = []
+    if single:
         findings = lint_project(target, cfg, writing_template_region())
     else:
         from . import venue
-        ws = Workspace.open(start=target, override=args.workspace)
-        cfg = load_lint_config(ws.root / "lint.toml")
         for pdir in ws.projects():
             try:
                 venue.refresh_if_stale(ws, pdir, cfg)
@@ -316,7 +325,7 @@ def run_lint(args):
             findings += lint_project(pdir, cfg, writing_template_region())
         findings += lint_workspace(ws, cfg)
     print(format_json(findings) if args.json else format_findings(findings))
-    return 1 if findings else 0
+    return exit_code(findings, fail_on)
 
 
 def _table_has(agents_text, slug):

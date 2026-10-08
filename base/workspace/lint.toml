@@ -2,3 +2,5 @@
 handoff_max_days_behind_commit = 1
 changelog_window_days = 14
 dirty_tree_warn_above = 0
+# Lowest severity that makes `rharness lint` exit 1: warning or error.
+fail_on = "warning"

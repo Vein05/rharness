@@ -262,6 +262,11 @@ Output: one line per finding, `<severity> <project>/<path>: <message>`,
 grouped by project, summary counts at the end. `--json` emits a list of
 objects with the same fields.
 
+Exit status: 1 when any finding is at or above `fail_on`, else 0; 2 on a
+usage or configuration error. `fail_on` is `warning` (the default: any
+finding fails) or `error` (warnings print but do not fail). `--fail-on`
+overrides the `lint.toml` value.
+
 ## 8. Testing
 
 - `tests/test_cli.py`: each subcommand against a `tmp_path` workspace,
@@ -303,9 +308,6 @@ objects with the same fields.
 - Network metadata verification of references (Crossref, OpenAlex) and any
   LLM judgment of claim support.
 - Two venues on one project. Per-plugin `SKILL.md` rendering.
-- A severity-aware `lint` exit code. Today `lint` exits 1 on any finding,
-  warnings included, so the `targeted` and `locked` states of section 10.7
-  differ in output, not in exit status.
 - Cursor and Gemini adapters.
 
 ## 10. Venues
@@ -492,9 +494,10 @@ and the charter history shows both moves.
 
 Two states. `targeted` (after `add` or `change`): venue checks run and every
 finding is downgraded to warning; deadlines show in `brief`. `locked`
-(after `lock`): findings keep the severity returned. The difference is in
-output and counts, not exit status; `lint` exits 1 on any finding today
-(section 9).
+(after `lock`): findings keep the severity returned. Under the default
+`fail_on = "warning"` both states exit 1 on any finding; under
+`fail_on = "error"` a targeted venue never fails lint and a locked one
+fails on its errors (section 7).
 
 `lock` prints a warning, not a refusal, when the charter's success criterion
 is still `NOT YET` or `spec/scoring.md` is still `proposed`. The base checks
@@ -663,3 +666,7 @@ needed, and `doctor` says so instead of insisting on TinyTeX.
   block only"; the block holds no deadlines, so the table reads deadlines from
   the cached venue.json and never scans a PDF or touches the network, which is
   the sentence's intent.
+- 2026-10-07: severity-aware `lint` exit moved out of section 9. `lint.toml`
+  gains `fail_on` (`warning` default, or `error`) and `lint` gains
+  `--fail-on`; section 7 states the exit status and section 10.7 how the two
+  venue states differ under each setting. The default is unchanged.

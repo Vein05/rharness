@@ -142,7 +142,9 @@ rharness hash traces/run-v2-full.jsonl --note "Table 1 rows 1-3"
 ```
 
 Check the workspace whenever you like. Lint exits 1 when anything fails, so
-it works in a pre-commit hook or a cron job. It checks structure and the
+it works in a pre-commit hook or a cron job. To fail on errors only, set
+`fail_on = "error"` in `lint.toml` or pass `--fail-on error`; warnings still
+print. It checks structure and the
 contract fields it can read: that the kill criterion states a threshold,
 that the scoring spec keeps its control and ceiling rows, that code has a
 spec, that recorded artifacts are unchanged. It does not judge the science.
@@ -194,7 +196,8 @@ sections, citation keys, style loaded, and an anonymity scan for git author
 names, the git remote, `\author`, `\thanks`, and acknowledgements. Until
 `venue lock`, every venue finding is a warning; after it, findings keep
 their severity and lint warns when the deadline is close and the charter's
-success criterion is still `NOT YET`.
+success criterion is still `NOT YET`. With `fail_on = "error"`, a targeted
+venue never fails lint and a locked one fails on its errors.
 
 The page check reads `paper/main.pdf`. Build it with `rharness paper build`
 (with [TinyTeX](https://yihui.org/tinytex/) installed, missing packages are
@@ -278,7 +281,7 @@ rharness owns only the text between `<!-- rharness:begin ... -->` and
 | `rharness remove <plugin>` | Uninstall a plugin; modified files are kept and listed |
 | `rharness list` | Plugins with origin, install status, and source |
 | `rharness plugin new <name> [--dir D]` | Scaffold a plugin directory |
-| `rharness lint [dir] [--json]` | Check projects against the rules; exit 1 on findings |
+| `rharness lint [dir] [--json] [--fail-on error\|warning]` | Check projects against the rules; exit 1 on findings at or above `fail_on` (default `warning`) |
 | `rharness venue add\|change\|lock\|unlock\|check\|update\|remove\|list [--project P]` | Attach, inspect, or detach a project's submission target |
 | `rharness paper build` | Build `paper/main.pdf` with latexmk |
 | `rharness doctor` | Check python, git, git-lfs, rtk, and hook registration |

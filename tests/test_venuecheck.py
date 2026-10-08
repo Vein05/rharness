@@ -200,3 +200,24 @@ def test_style_message_wording_follows_the_marker(tmp_path):
     (paper / "main.tex").write_text("\\documentclass{article}\n")
     msg = VC._check_style(tmp_path, venue, "\\documentclass{article}\n")[0][2]
     assert "in the preamble" in msg and "rharness:venue-style" not in msg
+
+
+def test_fail_on_error_separates_targeted_from_locked(venue_project, ws):
+    from conftest import run_cli
+    p, venue, d = venue_project
+    ch = (p / "CHARTER.md").read_text().replace(
+        "<!-- The negative result that means stop spending. State a threshold. -->",
+        "Stop if the pilot AUC is below 0.55 on the held-out split.")
+    (p / "CHARTER.md").write_text(ch)
+    subprocess.run(["git", "add", "-A"], cwd=str(p), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", "paper"], cwd=str(p), check=True, capture_output=True)
+    code, out, err = run_cli(["lint", "--json", "--fail-on", "error"], cwd=ws)
+    rows = [json.loads(l) for l in out.splitlines() if l.startswith("{")]
+    assert any("missing2021" in r["message"] for r in rows), out
+    assert all(r["severity"] == "warning" for r in rows), out
+    assert code == 0, out
+    blk = V.read_block(p); blk["state"] = "locked"; blk["locked_on"] = "2026-09-10"; V.write_block(p, blk)
+    code, out, err = run_cli(["lint", "--json", "--fail-on", "error"], cwd=ws)
+    assert code == 1, out
+    assert any(json.loads(l)["severity"] == "error" and "missing2021" in l
+               for l in out.splitlines() if l.startswith("{")), out

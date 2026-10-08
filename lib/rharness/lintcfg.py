@@ -7,6 +7,7 @@ DEFAULTS = {
     "changelog_window_days": 14,
     "dirty_tree_warn_above": 0,
     "venue_index": "Vein05/rharness/venues",
+    "fail_on": "warning",
 }
 _LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$")
 

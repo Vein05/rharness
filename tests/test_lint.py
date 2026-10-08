@@ -229,3 +229,53 @@ def test_lintcfg_has_venue_index_default(tmp_path):
     assert cfg["venue_index"] == "Vein05/rharness/venues"
     f = tmp_path / "lint.toml"; f.write_text('venue_index = "lab/repo/venues"\n')
     assert load_lint_config(f)["venue_index"] == "lab/repo/venues"
+
+
+def _warnings_only(ws):
+    p = _clean_project(ws)
+    (p / "scratch.txt").write_text("x\n")  # one uncommitted change: a warning, no errors
+    _, _, f = _run(ws)
+    assert f and all(x["severity"] == "warning" for x in f), f
+    return p
+
+
+def test_fail_on_default_is_warning(ws):
+    _warnings_only(ws)
+    code, _, _ = _run(ws)
+    assert code == 1
+
+
+def test_fail_on_error_flag_passes_warnings(ws):
+    _warnings_only(ws)
+    code, _, _ = _run(ws, "--fail-on", "error")
+    assert code == 0
+
+
+def test_fail_on_from_lint_toml_and_flag_overrides(ws):
+    p = _warnings_only(ws)
+    with open(ws / "lint.toml", "a") as fh:
+        fh.write('fail_on = "error"\n')
+    assert _run(ws)[0] == 0
+    assert _run(ws, "--fail-on", "warning")[0] == 1
+    code, out, err = run_cli(["lint", str(p)], cwd=ws)
+    assert code == 0, out
+
+
+def test_fail_on_error_still_fails_on_errors(ws):
+    _clean_project(ws)
+    run_cli(["new", "z"], cwd=ws)  # no commits: an error
+    assert _run(ws, "--fail-on", "error")[0] == 1
+
+
+def test_fail_on_bad_value_in_lint_toml(ws):
+    _clean_project(ws)
+    with open(ws / "lint.toml", "a") as fh:
+        fh.write("fail_on = never\n")
+    code, out, err = run_cli(["lint"], cwd=ws)
+    assert code == 2
+    assert "fail_on" in err and "never" in err
+
+
+def test_fail_on_bad_flag_value(ws):
+    code, out, err = run_cli(["lint", "--fail-on", "info"], cwd=ws)
+    assert code == 2
