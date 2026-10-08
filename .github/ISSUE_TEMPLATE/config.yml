@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Issue format and labels
+    url: https://github.com/Vein05/rharness/blob/main/ISSUES.md
+    about: Read this before opening an issue.

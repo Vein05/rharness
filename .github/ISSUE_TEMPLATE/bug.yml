@@ -1,0 +1,53 @@
+name: Bug
+description: rharness does something other than what the spec or README says
+title: "<area>: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Format: see ISSUES.md. This repository is public: no private research content (data, results, costs, names, home-directory paths).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happens, and what should happen instead. Exact command and output.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Repro
+      description: The smallest sequence of commands that shows it.
+      render: sh
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: "`file:function`, if known (e.g. lib/rharness/brief.py: newest_dated)"
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `rharness version`, plus OS and Python version.
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Proposed fix
+      description: Optional. Options with trade-offs; say which you would pick.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: Testable statements a test can assert once this is fixed.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [lint, brief, session, records, venue, paper, plugin, install, other]
+    validations:
+      required: true

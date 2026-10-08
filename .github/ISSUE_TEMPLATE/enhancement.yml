@@ -1,0 +1,46 @@
+name: Enhancement
+description: A new capability or a change to existing behaviour
+title: "<area>: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Format: see ISSUES.md. If this needs a decision before code, say so; it will get `needs-design`.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: The friction or gap, with a concrete case. Not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Proposed change
+      description: Options with trade-offs; say which you would pick and why.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: Testable statements a test can assert once this is done.
+  - type: textarea
+    id: related
+    attributes:
+      label: Related
+      description: Issues, pull requests, spec sections.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [lint, brief, session, records, venue, paper, plugin, install, other]
+    validations:
+      required: true
+  - type: checkboxes
+    id: dogfood
+    attributes:
+      label: Source
+      options:
+        - label: Found while using rharness on a real project
