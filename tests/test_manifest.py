@@ -85,3 +85,31 @@ def test_ctx_persists(tmp_path):
     m = Manifest.new(p, "0.1.0", ctx={"slug": "seam", "title": "SEAM"})
     m.save()
     assert Manifest.load(p).ctx == {"slug": "seam", "title": "SEAM"}
+
+
+def test_record_region_name_string(tmp_path):
+    from rharness.manifest import Manifest
+    root = tmp_path / "w"; (root / ".rharness").mkdir(parents=True)
+    (root / "AGENTS.md").write_text("x\n")
+    m = Manifest.new(root / ".rharness" / "manifest.json", "0.3.0")
+    m.record("AGENTS.md", "base", region="plugin:iclr2027")
+    assert m.entry("AGENTS.md")["region"] == "plugin:iclr2027"
+    assert m.region_name("AGENTS.md") == "plugin:iclr2027"
+    m.record("AGENTS.md", "base", region=True)
+    assert m.region_name("AGENTS.md") == "base"
+    m.record("AGENTS.md", "base")
+    assert m.region_name("AGENTS.md") is None
+
+
+def test_rehash_updates_only_sha(tmp_path):
+    from rharness.manifest import Manifest, sha256_file
+    root = tmp_path / "w"; (root / ".rharness").mkdir(parents=True)
+    f = root / "CHARTER.md"; f.write_text("v1\n")
+    m = Manifest.new(root / ".rharness" / "manifest.json", "0.3.0")
+    m.record("CHARTER.md", "base", source="base/project/CHARTER.md")
+    f.write_text("v2\n")
+    assert not m.is_unmodified("CHARTER.md")
+    assert m.rehash("CHARTER.md") is True
+    assert m.is_unmodified("CHARTER.md")
+    assert m.entry("CHARTER.md")["source"] == "base/project/CHARTER.md"
+    assert m.rehash("nope.md") is False

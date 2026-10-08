@@ -72,3 +72,21 @@ def test_brief_caps_long_handoff(ws):
 def test_brief_unknown_project(ws):
     code, out, err = run_cli(["brief", "nope"], cwd=ws)
     assert code == 2 and "nope" in err
+
+
+def test_brief_shows_venue_line_and_workspace_column(ws, tmp_path, home):
+    from venue_helpers import venue_index_repo, point_workspace_at
+    env, index, repo = venue_index_repo(tmp_path)
+    point_workspace_at(ws, index)
+    p = _project(ws)
+    code, out, err = run_cli(["venue", "add", "testconf2026"], cwd=p, env=env)
+    assert code == 0, err
+    code, out, err = run_cli(["brief", "seam"], cwd=ws, env=env)
+    assert "## Venue: testconf2026 (targeted)" in out
+    assert "full deadline 2027-06-08" in out and "(primary)" in out
+    assert "Package fetched" in out
+    code, out, err = run_cli(["brief"], cwd=ws, env=env)
+    header = next(l for l in out.splitlines() if l.startswith("| project |"))
+    assert "| venue |" in header
+    row = next(l for l in out.splitlines() if l.startswith("| seam |"))
+    assert "testconf2026 targeted" in row and row.split("testconf2026 targeted")[1].strip().split()[0].endswith("d")

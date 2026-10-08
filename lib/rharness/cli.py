@@ -72,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("lint", help="check projects against the rules")
     s.add_argument("dir", nargs="?")
     s.add_argument("--json", action="store_true", help="one JSON object per finding")
+    s.add_argument("--fail-on", choices=("error", "warning"),
+                   help="lowest severity that makes lint exit 1 (default: lint.toml fail_on, else warning)")
+    s.add_argument("--venue", metavar="NAME",
+                   help="run only the venue checks for NAME on dir, a LaTeX directory with no rharness files")
+    s.add_argument("--main", metavar="FILE", help="with --venue: the main .tex file (default: found by \\documentclass)")
 
     sub.add_parser("doctor", help="check the machine and workspace")
 
@@ -88,7 +93,108 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("update", help="fetch the latest release and re-apply managed files")
     s.add_argument("--no-fetch", action="store_true", help="only re-apply managed files")
     s.add_argument("--force", action="store_true", help="overwrite modified files (backed up first)")
+
+    pp = argparse.ArgumentParser(add_help=False)
+    pp.add_argument("--project", default=argparse.SUPPRESS, help="project slug when not inside one")
+    s = sub.add_parser("venue", parents=[pp],
+                       help="submission target for a project: status, add, change, lock, unlock, check, update, remove, list")
+    vs = s.add_subparsers(dest="venue_cmd")
+    a = vs.add_parser("add", parents=[pp], help="attach a venue: `add iclr 2027`, `add iclr2027`, or owner/repo/venues/<name>[@ref]")
+    a.add_argument("tokens", nargs="+", metavar="venue")
+    a.add_argument("--refresh", action="store_true", help="re-fetch the package before installing")
+    c = vs.add_parser("change", parents=[pp], help="swap the venue (confirmed)")
+    c.add_argument("tokens", nargs="+", metavar="venue")
+    vs.add_parser("lock", parents=[pp], help="venue checks report at full severity")
+    vs.add_parser("unlock", parents=[pp], help="back to targeted (confirmed)")
+    k = vs.add_parser("check", parents=[pp], help="run the venue checks only")
+    k.add_argument("--build", action="store_true", help="run `paper build` first")
+    vs.add_parser("update", parents=[pp], help="refresh the venue package from upstream now")
+    vs.add_parser("remove", parents=[pp], help="detach the venue (confirmed)")
+    vs.add_parser("list", help="venues in the index")
+
+    s = sub.add_parser("paper", help="paper build")
+    pb = s.add_subparsers(dest="paper_cmd")
+    pb.add_parser("build", parents=[pp], help="latexmk in paper/; with TinyTeX, installs missing packages via tlmgr")
     return p
+
+
+def select_project(ws, slug):
+    from .brief import find_project
+    projects = ws.projects()
+    if slug:
+        cand = ws.root / slug
+        if cand not in projects:
+            err(f"{slug} is not a project in {ws.root}")
+            return None
+        return cand
+    pdir = find_project(ws, Path.cwd())
+    if pdir:
+        return pdir
+    if not projects:
+        err("no projects in this workspace; run `rharness new <slug>` first")
+        return None
+    if sys.stdin.isatty():
+        for i, p in enumerate(projects, 1):
+            print(f"  {i}. {p.name}")
+        try:
+            choice = input("Project number: ").strip()
+        except EOFError:
+            choice = ""
+        if choice.isdigit() and 1 <= int(choice) <= len(projects):
+            return projects[int(choice) - 1]
+        err("no project chosen")
+        return None
+    err("not inside a project; pass --project <slug>. Projects: " + ", ".join(p.name for p in projects))
+    return None
+
+
+def run_venue(args):
+    from . import venue as V
+    from .lintcfg import load_lint_config
+    ws = Workspace.open(override=args.workspace)
+    cfg = load_lint_config(ws.root / "lint.toml")
+    cmd = args.venue_cmd or "status"
+    try:
+        if cmd == "list":
+            return V.cmd_list(ws, cfg)
+        pdir = select_project(ws, getattr(args, "project", None))
+        if pdir is None:
+            return 2
+        if cmd == "status":
+            return V.cmd_status(ws, pdir, cfg)
+        if cmd == "add":
+            return V.cmd_add(ws, pdir, args.tokens, cfg, yes=args.yes, dry_run=args.dry_run, refresh=args.refresh)
+        if cmd == "change":
+            return V.cmd_change(ws, pdir, args.tokens, cfg, yes=args.yes, dry_run=args.dry_run)
+        if cmd == "lock":
+            return V.cmd_lock(ws, pdir, cfg)
+        if cmd == "unlock":
+            return V.cmd_unlock(ws, pdir, cfg, yes=args.yes)
+        if cmd == "check":
+            return V.cmd_check(ws, pdir, cfg, build=args.build)
+        if cmd == "update":
+            return V.cmd_update(ws, pdir, cfg, yes=args.yes)
+        if cmd == "remove":
+            return V.cmd_remove(ws, pdir, cfg, yes=args.yes, dry_run=args.dry_run)
+    except V.VenueError as e:
+        err(str(e))
+        return 2
+    err(f"unknown venue subcommand {cmd}")
+    return 2
+
+
+def run_paper(args):
+    from .paper import build
+    if args.paper_cmd != "build":
+        err("usage: rharness paper build [--project SLUG]")
+        return 2
+    ws = Workspace.open(override=args.workspace)
+    pdir = select_project(ws, getattr(args, "project", None))
+    if pdir is None:
+        return 2
+    code, msg = build(pdir / "paper")
+    print(msg if code == 0 else f"rharness: {msg}", file=sys.stdout if code == 0 else sys.stderr)
+    return code
 
 
 def run_update(args):
@@ -186,30 +292,76 @@ def run_doctor(args):
         ws = None
     failed = False
     for name, ok, detail in doctor_checks(ws):
-        print(f"{'ok  ' if ok else 'FAIL'} {name}: {detail}")
-        failed |= not ok
+        tag = "ok  " if ok else ("note" if ok is None else "FAIL")
+        print(f"{tag} {name}: {detail}")
+        failed |= ok is False
     return 1 if failed else 0
 
 
 def run_lint(args):
-    from .lint import (format_findings, format_json, lint_project, lint_workspace,
-                       writing_template_region)
+    from .lint import (FAIL_ON, exit_code, format_findings, format_json, lint_project,
+                       lint_workspace, writing_template_region)
     from .lintcfg import load_lint_config
+    if args.venue:
+        return _lint_bare(args)
+    if args.main:
+        err("--main needs --venue")
+        return 2
     target = Path(args.dir).resolve() if args.dir else None
-    findings = []
-    if target and ((target / "CHARTER.md").exists() or (target / "AGENTS.md").exists()) \
-            and not (target / MANIFEST_REL).exists():
+    single = target and ((target / "CHARTER.md").exists() or (target / "AGENTS.md").exists()) \
+        and not (target / MANIFEST_REL).exists()
+    if single:
         root = find_root(target.parent)
         cfg = load_lint_config(root / "lint.toml" if root else None)
-        findings = lint_project(target, cfg, writing_template_region())
     else:
         ws = Workspace.open(start=target, override=args.workspace)
         cfg = load_lint_config(ws.root / "lint.toml")
+    fail_on = args.fail_on or cfg["fail_on"]
+    if fail_on not in FAIL_ON:
+        err(f"lint.toml: fail_on = {fail_on!r}; choose from {', '.join(FAIL_ON)}")
+        return 2
+    findings = []
+    if single:
+        findings = lint_project(target, cfg, writing_template_region())
+    else:
+        from . import venue
         for pdir in ws.projects():
+            try:
+                venue.refresh_if_stale(ws, pdir, cfg)
+            except Exception:
+                pass  # a refresh problem must never block lint
             findings += lint_project(pdir, cfg, writing_template_region())
         findings += lint_workspace(ws, cfg)
     print(format_json(findings) if args.json else format_findings(findings))
-    return 1 if findings else 0
+    return exit_code(findings, fail_on)
+
+
+def _lint_bare(args):
+    from . import venue as V, venuecheck
+    from .lint import FAIL_ON, Finding, exit_code, format_findings, format_json
+    from .lintcfg import load_lint_config
+    target = Path(args.dir or ".").resolve()
+    if not target.is_dir():
+        err(f"{target} is not a directory")
+        return 2
+    root = find_root(target)
+    cfg = load_lint_config(root / "lint.toml" if root else None)
+    fail_on = args.fail_on or cfg["fail_on"]
+    if fail_on not in FAIL_ON:
+        err(f"lint.toml: fail_on = {fail_on!r}; choose from {', '.join(FAIL_ON)}")
+        return 2
+    try:
+        got = V.bare_package(args.venue.split(), cfg, yes=args.yes)
+        if got is None:
+            return 1
+        plugin, venue = got
+        rows = venuecheck.bare_findings(target, venue, plugin.dir, main=args.main)
+    except V.VenueError as e:
+        err(str(e))
+        return 2
+    findings = [Finding(sev, target.name, path, msg) for sev, path, msg in rows]
+    print(format_json(findings) if args.json else format_findings(findings))
+    return exit_code(findings, fail_on)
 
 
 def _table_has(agents_text, slug):
@@ -348,6 +500,8 @@ def run_list(args):
     rows = []
     from .plugin import fetched_commit
     for name, plugin in available_plugins().items():
+        if plugin.scope == "project":
+            continue
         src = sources.get(name, "")
         commit = fetched_commit(plugin.dir)
         if src and commit:

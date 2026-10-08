@@ -221,3 +221,133 @@ def test_code_without_component_spec_warns(ws):
     _commit_all(p)
     _, msgs, _ = _run(ws)
     assert not any("code without a spec" in m for m in msgs)
+
+
+def test_lintcfg_has_venue_index_default(tmp_path):
+    from rharness.lintcfg import load_lint_config
+    cfg = load_lint_config(None)
+    assert cfg["venue_index"] == "Vein05/rharness/venues"
+    f = tmp_path / "lint.toml"; f.write_text('venue_index = "lab/repo/venues"\n')
+    assert load_lint_config(f)["venue_index"] == "lab/repo/venues"
+
+
+def _warnings_only(ws):
+    p = _clean_project(ws)
+    (p / "scratch.txt").write_text("x\n")  # one uncommitted change: a warning, no errors
+    _, _, f = _run(ws)
+    assert f and all(x["severity"] == "warning" for x in f), f
+    return p
+
+
+def test_fail_on_default_is_warning(ws):
+    _warnings_only(ws)
+    code, _, _ = _run(ws)
+    assert code == 1
+
+
+def test_fail_on_error_flag_passes_warnings(ws):
+    _warnings_only(ws)
+    code, _, _ = _run(ws, "--fail-on", "error")
+    assert code == 0
+
+
+def test_fail_on_from_lint_toml_and_flag_overrides(ws):
+    p = _warnings_only(ws)
+    with open(ws / "lint.toml", "a") as fh:
+        fh.write('fail_on = "error"\n')
+    assert _run(ws)[0] == 0
+    assert _run(ws, "--fail-on", "warning")[0] == 1
+    code, out, err = run_cli(["lint", str(p)], cwd=ws)
+    assert code == 0, out
+
+
+def test_fail_on_error_still_fails_on_errors(ws):
+    _clean_project(ws)
+    run_cli(["new", "z"], cwd=ws)  # no commits: an error
+    assert _run(ws, "--fail-on", "error")[0] == 1
+
+
+def test_fail_on_bad_value_in_lint_toml(ws):
+    _clean_project(ws)
+    with open(ws / "lint.toml", "a") as fh:
+        fh.write("fail_on = never\n")
+    code, out, err = run_cli(["lint"], cwd=ws)
+    assert code == 2
+    assert "fail_on" in err and "never" in err
+
+
+def test_fail_on_bad_flag_value(ws):
+    code, out, err = run_cli(["lint", "--fail-on", "info"], cwd=ws)
+    assert code == 2
+
+
+def _set(ws, **kv):
+    with open(ws / "lint.toml", "a") as fh:
+        for k, v in kv.items():
+            fh.write(f"{k} = {v}\n")
+
+
+def _cap_rows(ws, what):
+    _, _, f = _run(ws)
+    return [x for x in f if "words; cap is" in x["message"] and what in x["message"]]
+
+
+def test_word_cap_defaults():
+    cfg = load_lint_config(None)
+    assert (cfg["charter_max_words"], cfg["handoff_max_words"], cfg["changelog_entry_max_words"],
+            cfg["brief_max_words"]) == (600, 600, 400, 1500)
+
+
+def test_charter_word_cap_warns_then_errors(ws):
+    p = _clean_project(ws)
+    _set(ws, charter_max_words=150)
+    assert not _cap_rows(ws, "CHARTER.md")
+    with open(p / "CHARTER.md", "a") as fh:
+        fh.write("\n<!-- " + "hidden " * 500 + "-->\n" + "word " * 100 + "\n")
+    _commit_all(p)
+    rows = _cap_rows(ws, "CHARTER.md")
+    assert len(rows) == 1 and rows[0]["severity"] == "warning" and rows[0]["path"] == "CHARTER.md", rows
+    assert "charter_max_words" in rows[0]["message"]
+    with open(p / "CHARTER.md", "a") as fh:
+        fh.write("word " * 300 + "\n")
+    _commit_all(p)
+    rows = _cap_rows(ws, "CHARTER.md")
+    assert rows[0]["severity"] == "error" and "twice" in rows[0]["message"], rows
+    _set(ws, charter_max_words=0)
+    assert not _cap_rows(ws, "CHARTER.md")
+
+
+def test_handoff_cap_reads_newest_only(ws):
+    p = _clean_project(ws)
+    _set(ws, handoff_max_words=50)  # `new` writes today's handoff; 2099 files are newer
+    (p / "handoff" / "2099-01-01.md").write_text("old " * 500)
+    (p / "handoff" / "2099-01-02.md").write_text("new " * 10)
+    _commit_all(p)
+    assert not _cap_rows(ws, "handoff")
+    (p / "handoff" / "2099-01-03.md").write_text("newer " * 60)
+    _commit_all(p)
+    rows = _cap_rows(ws, "handoff")
+    assert len(rows) == 1 and rows[0]["path"] == "handoff/2099-01-03.md", rows
+
+
+def test_changelog_cap_reads_last_entry_only(ws):
+    p = _clean_project(ws)
+    _set(ws, changelog_entry_max_words=50)
+    today = dt.date.today().isoformat()
+    f = p / "changelog" / f"{today}.md"
+    f.write_text(f"# Changelog — {today}\n\n## 09:00 first\n" + "long " * 200 + "\n\n## 10:00 second\nshort entry\n")
+    _commit_all(p)
+    assert not _cap_rows(ws, "changelog")
+    with open(f, "a") as fh:
+        fh.write("\n## 11:00 third\n" + "long " * 60 + "\n")
+    _commit_all(p)
+    rows = _cap_rows(ws, "changelog")
+    assert len(rows) == 1 and rows[0]["path"] == f"changelog/{today}.md" and "11:00 third" in rows[0]["message"], rows
+
+
+def test_brief_cap(ws):
+    _clean_project(ws)
+    assert not _cap_rows(ws, "brief")
+    _set(ws, brief_max_words=40)
+    rows = _cap_rows(ws, "brief")
+    assert len(rows) == 1 and rows[0]["path"] == "" and "brief_max_words" in rows[0]["message"], rows

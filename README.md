@@ -142,10 +142,17 @@ rharness hash traces/run-v2-full.jsonl --note "Table 1 rows 1-3"
 ```
 
 Check the workspace whenever you like. Lint exits 1 when anything fails, so
-it works in a pre-commit hook or a cron job. It checks structure and the
+it works in a pre-commit hook or a cron job. To fail on errors only, set
+`fail_on = "error"` in `lint.toml` or pass `--fail-on error`; warnings still
+print. It checks structure and the
 contract fields it can read: that the kill criterion states a threshold,
 that the scoring spec keeps its control and ceiling rows, that code has a
-spec, that recorded artifacts are unchanged. It does not judge the science.
+spec, that recorded artifacts are unchanged, and that `paper/references.bib`
+is sound: cited keys exist, no entry is malformed or duplicated by key or
+DOI, and nothing in it goes uncited. It also caps the words a fresh session
+reads first: CHARTER.md, the newest handoff, the last changelog entry, and
+the project brief (`*_max_words` in `lint.toml`; over the cap warns, over
+twice it fails). It does not judge the science.
 
 ```sh
 rharness lint
@@ -171,6 +178,53 @@ ok   workspace manifest: /Users/you/research/.rharness/manifest.json
 ok   rtk binary on PATH: /opt/homebrew/bin/rtk
 ok   rtk hook registered: /Users/you/research/.claude/settings.json
 ```
+
+## Venues
+
+Attach the submission target to a project. The package comes from
+`venues/<name>/` in this repository, fetched on demand and refreshed when
+older than a day, so deadlines and style files do not go stale in a release.
+
+```sh
+cd ~/research/seam
+rharness venue add iclr 2027
+rharness venue              # status: deadlines, package age, venue checks
+rharness venue lock         # when the paper is committed to this venue
+rharness venue change aaai 2027
+```
+
+`venue add` installs the venue's style files into `paper/`, a prefilled
+so-what playbook into `research/`, a section into the project's `AGENTS.md`,
+and records the target in `CHARTER.md`'s revision notes. From then on
+`rharness lint` runs the venue checks: main-body page count, required
+sections, citation keys, style loaded, and an anonymity scan for git author
+names, the git remote, `\author`, `\thanks`, and acknowledgements. Until
+`venue lock`, every venue finding is a warning; after it, findings keep
+their severity and lint warns when the deadline is close and the charter's
+success criterion is still `NOT YET`. With `fail_on = "error"`, a targeted
+venue never fails lint and a locked one fails on its errors.
+
+The page check reads `paper/main.pdf`. Build it with `rharness paper build`
+(with [TinyTeX](https://yihui.org/tinytex/) installed, missing packages are
+pulled through `tlmgr`), or download the compiled PDF from Overleaf into
+`paper/main.pdf`. Neither poppler nor TeX is required to read it.
+
+The same checks run on a LaTeX repository with no rharness files, such as an
+Overleaf git clone:
+
+```sh
+rharness lint --venue iclr2027 ~/papers/my-submission
+```
+
+The main file is `main.tex`, or the one `.tex` file with `\documentclass`
+(`--main FILE` picks one). Only files reached through `\input`, `\include`,
+or `\subfile` are scanned, bib files come from `\bibliography` or
+`\addbibresource`, and the PDF is the main file's name with `.pdf`. Findings
+keep their severity, as if the venue were locked.
+
+Off a TTY, `change`, `unlock`, and `remove` refuse without `--yes` and say so
+in words an agent can relay. From the workspace root, pass `--project <slug>`.
+Venue packages are documented in `venues/README.md`.
 
 ## Already have a research folder?
 
@@ -245,7 +299,9 @@ rharness owns only the text between `<!-- rharness:begin ... -->` and
 | `rharness remove <plugin>` | Uninstall a plugin; modified files are kept and listed |
 | `rharness list` | Plugins with origin, install status, and source |
 | `rharness plugin new <name> [--dir D]` | Scaffold a plugin directory |
-| `rharness lint [dir] [--json]` | Check projects against the rules; exit 1 on findings |
+| `rharness lint [dir] [--json] [--fail-on error\|warning] [--venue NAME [--main FILE]]` | Check projects against the rules; exit 1 on findings at or above `fail_on` (default `warning`); `--venue` runs only that venue's checks on a bare LaTeX directory |
+| `rharness venue add\|change\|lock\|unlock\|check\|update\|remove\|list [--project P]` | Attach, inspect, or detach a project's submission target |
+| `rharness paper build` | Build `paper/main.pdf` with latexmk |
 | `rharness doctor` | Check python, git, git-lfs, rtk, and hook registration |
 | `rharness update [--no-fetch] [--force]` | Fetch the latest release, verify it against `SHA256SUMS`, re-apply managed files |
 | `rharness session-check` | Behind the Claude Code Stop hook: today's work needs today's handoff and changelog |

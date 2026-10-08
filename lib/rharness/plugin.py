@@ -1,4 +1,5 @@
 """Plugins: directories with plugin.json, agents.md, files/, project-files/, claude/, setup.sh."""
+import hashlib
 import json
 import os
 import re
@@ -8,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .manifest import Manifest, today
+from .manifest import Manifest, now_iso, today
 from .paths import BASE_DIR, PLUGINS_DIR, rharness_home
 from .regions import remove_region, upsert_region
 from .templates import copy_tree
@@ -49,17 +50,99 @@ def split_ref(spec: str):
     return spec, None
 
 
+def _no_escape(spec: str, path):
+    """Refuse a remote path that leaves the directory it names (or is absolute).
+
+    `repo_dir / subdir` is not normalised anywhere downstream, so a `..` segment would
+    hand back a directory outside the one the source spec appears to point at.
+    """
+    if not path:
+        return
+    if path.startswith("/") or ".." in path.split("/"):
+        raise PluginNotFound(f"{spec}: a remote plugin path must not contain '..' "
+                             f"or start with '/' (got {path!r})")
+
+
 def classify_source(spec: str):
     """Return (kind, payload): builtin | path | git | github. payload carries the ref for git kinds."""
     base, ref = split_ref(spec)
     if base.startswith(("./", "../", "/", "~")) or ("/" in base and (Path(base) / "plugin.json").exists()):
         return "path", str(Path(base).expanduser().resolve())
     if base.startswith(("http://", "https://", "git@", "ssh://", "file://")) or base.endswith(".git"):
+        if ".." in base.split("/"):
+            raise PluginNotFound(f"{spec}: a remote plugin path must not contain '..'")
         return "git", (base, ref)
     m = GITHUB_RE.match(base)
     if m and "/" in base:
+        _no_escape(spec, m.group(3))
         return "github", (m.group(1), m.group(2), m.group(3), ref)
     return "builtin", spec
+
+
+def remote_url(spec: str):
+    """(url, ref, subdir) for git and github specs; None for builtin names and local paths."""
+    kind, payload = classify_source(spec)
+    if kind == "github":
+        owner, repo, subdir, ref = payload
+        base = os.environ.get("RHARNESS_GITHUB_BASE", "https://github.com/")
+        url = f"{base}{owner}/{repo}"
+        if base.startswith("https://"):
+            url += ".git"
+        return url, ref, subdir
+    if kind == "git":
+        (url, ref) = payload
+        return url, ref, None
+    return None
+
+
+def clone_at(url: str, ref, dest: Path) -> str:
+    """Shallow clone at a branch or tag, else full clone and checkout a commit. Returns HEAD sha.
+
+    dest must not already exist: the fallback removes whatever the first clone left there.
+    """
+    existed = Path(dest).exists()
+    step = "clone"
+    args = ["git", "clone", "-q", "--depth", "1"] + (["--branch", ref] if ref else []) + [url, str(dest)]
+    r = subprocess.run(args, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0 and ref:
+        if not existed:
+            shutil.rmtree(dest, ignore_errors=True)
+        r = subprocess.run(["git", "clone", "-q", url, str(dest)], capture_output=True, text=True, timeout=300)
+        if r.returncode == 0:
+            step = "checkout"
+            r = subprocess.run(["git", "checkout", "-q", ref], cwd=str(dest),
+                               capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        what = f"git checkout of {url}@{ref}" if step == "checkout" else \
+               f"git clone of {url}" + (f"@{ref}" if ref else "")
+        raise PluginNotFound(f"{what} failed: {r.stderr.strip()}")
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(dest),
+                          capture_output=True, text=True, timeout=30).stdout.strip()
+
+
+def source_info(plugin_dir: Path) -> dict:
+    f = Path(plugin_dir) / ".rharness-source.json"
+    if not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text())
+    except json.JSONDecodeError:
+        return {}
+
+
+def tree_hash(directory: Path) -> str:
+    h = hashlib.sha256()
+    directory = Path(directory)
+    for f in sorted(p for p in directory.rglob("*") if p.is_file()):
+        rel = f.relative_to(directory).as_posix()
+        if rel.startswith(".git/") or "__pycache__" in f.parts or rel == ".rharness-source.json":
+            continue
+        h.update(rel.encode() + b"\n")
+        with open(f, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 16), b""):
+                h.update(chunk)
+        h.update(b"\n")
+    return h.hexdigest()
 
 
 def _copy_plugin_dir(src: Path, dest_root: Path) -> Path:
@@ -86,34 +169,18 @@ def fetch_plugin(spec: str, dest_root=None) -> Path:
     if kind == "builtin":
         raise PluginNotFound(f"no plugin named {spec}; use a built-in name, a local path, "
                              f"a git URL, or owner/repo[/subdir] on GitHub")
-    if kind == "github":
-        owner, repo, subdir, ref = payload
-        base = os.environ.get("RHARNESS_GITHUB_BASE", "https://github.com/")
-        url = f"{base}{owner}/{repo}"
-        if base.startswith("https://"):
-            url += ".git"
-    else:
-        (url, ref), subdir = payload, None
+    remote = remote_url(spec)
+    url, ref, subdir = remote
     tmp = Path(tempfile.mkdtemp(prefix="rharness-plugin-"))
     try:
         repo_dir = tmp / "repo"
-        args = ["git", "clone", "-q", "--depth", "1"] + (["--branch", ref] if ref else []) + [url, str(repo_dir)]
-        r = subprocess.run(args, capture_output=True, text=True)
-        if r.returncode != 0 and ref:
-            # not a branch or tag: full clone, then check out the commit
-            r = subprocess.run(["git", "clone", "-q", url, str(repo_dir)], capture_output=True, text=True)
-            if r.returncode == 0:
-                r = subprocess.run(["git", "checkout", "-q", ref], cwd=str(repo_dir), capture_output=True, text=True)
-        if r.returncode != 0:
-            raise PluginNotFound(f"git clone of {url}" + (f"@{ref}" if ref else "") + f" failed: {r.stderr.strip()}")
-        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir),
-                                capture_output=True, text=True).stdout.strip()
+        commit = clone_at(url, ref, repo_dir)
         src = repo_dir / subdir if subdir else repo_dir
         if not src.is_dir():
             raise PluginNotFound(f"{subdir} is not a directory in {url}")
         dest = _copy_plugin_dir(src, dest_root)
         (dest / ".rharness-source.json").write_text(json.dumps(
-            {"spec": spec, "commit": commit, "ref": ref, "fetched": today()}, indent=2) + "\n")
+            {"spec": spec, "commit": commit, "ref": ref, "fetched": now_iso()}, indent=2) + "\n")
         return dest
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -139,6 +206,8 @@ def capability_summary(plugin, ws) -> str:
     if commit:
         lines[0] += f" (commit {commit[:12]})"
     lines.append(f"  {n_files} file(s) into the workspace root; {n_proj} file(s) into every project")
+    if plugin.scope == "project":
+        lines.append("  scope: project (installs into one project only)")
     lines.append(f"  AGENTS.md section: {'yes, ' + str(len(snippet.splitlines())) + ' lines' if snippet else 'no'}"
                  " (the agent will follow it)")
     claude = ws.wants("claude") and "claude" in plugin.harness
@@ -190,6 +259,14 @@ class Plugin:
     @property
     def origin(self):
         return "builtin" if self.dir.parent == plugins_dir() else "user"
+
+    @property
+    def scope(self):
+        return self.meta.get("scope", "workspace")
+
+    @property
+    def kind(self):
+        return self.meta.get("kind")
 
     @property
     def harness(self):
@@ -341,11 +418,14 @@ def install_plugin(ws, spec, dry_run=False, base=None, refresh=False, yes=False)
         if plugin is None:
             fetched = fetch_plugin(spec)
             plugin = Plugin(fetched.name, fetched)
-        if not dry_run:
-            print(capability_summary(plugin, ws))
-            if not yes and not confirm("Install this plugin?"):
-                print("Not installed. Re-run with --yes to accept, or inspect the directory above first.")
-                return 1
+    if plugin.scope == "project":
+        print(f"rharness: {plugin.name} is a project-scoped plugin; use `rharness venue add`", file=sys.stderr)
+        return 2
+    if source and not dry_run:
+        print(capability_summary(plugin, ws))
+        if not yes and not confirm("Install this plugin?"):
+            print("Not installed. Re-run with --yes to accept, or inspect the directory above first.")
+            return 1
     name = plugin.name
     owner = f"plugin:{name}"
     ctx = {"workspace": str(ws.root), "date": today()}

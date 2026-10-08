@@ -179,3 +179,47 @@ def test_add_reports_missing_env_and_binaries(ws, tmp_path):
                              env={"PATH": str(fake), "OPENROUTER_API_KEY": ""})
     assert code == 0, err
     assert "OPENROUTER_API_KEY" in out and "pdftotext" in out
+
+
+def test_add_refuses_project_scoped_plugin(ws, tmp_path):
+    import json
+    d = tmp_path / "pv"; (d / "project-files").mkdir(parents=True)
+    (d / "plugin.json").write_text(json.dumps({"name": "pv", "description": "x", "version": "0.0.1",
+                                              "harness": ["claude"], "scope": "project", "kind": "venue"}))
+    (d / "agents.md").write_text("## pv\n")
+    code, out, err = run_cli(["--yes", "add", str(d)], cwd=ws)
+    assert code == 2 and "project-scoped" in err and "venue add" in err
+
+
+def test_fetched_is_timestamp_and_source_info(ws, tmp_path, home):
+    import json, re, subprocess
+    from rharness.plugin import source_info
+    d = tmp_path / "ext" / "tsplug"; (d / "files" / "tsplug").mkdir(parents=True)
+    (d / "plugin.json").write_text(json.dumps({"name": "tsplug", "description": "x", "version": "0.0.1", "harness": ["claude"]}))
+    (d / "agents.md").write_text("## tsplug\n")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=d, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=d, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "p"], cwd=d, check=True)
+    code, out, err = run_cli(["--yes", "add", f"file://{d}"], cwd=ws)
+    assert code == 0, err
+    info = source_info(home / ".rharness" / "plugins" / "tsplug")
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$", info["fetched"]), info
+    assert len(info["commit"]) == 40
+
+
+def test_remote_url_and_tree_hash(tmp_path, monkeypatch):
+    from rharness.plugin import remote_url, tree_hash
+    monkeypatch.setenv("RHARNESS_GITHUB_BASE", "file:///gh/")
+    assert remote_url("lab/repo/venues/x@v1") == ("file:///gh/lab/repo", "v1", "venues/x")
+    monkeypatch.delenv("RHARNESS_GITHUB_BASE")
+    assert remote_url("lab/repo") == ("https://github.com/lab/repo.git", None, None)
+    assert remote_url("https://h/r.git@abc") == ("https://h/r.git", "abc", None)
+    assert remote_url("rtk") is None
+    d = tmp_path / "t"; (d / "sub").mkdir(parents=True)
+    (d / "a.txt").write_text("1"); (d / "sub" / "b.txt").write_text("2")
+    (d / ".rharness-source.json").write_text("{}")
+    h1 = tree_hash(d)
+    (d / ".rharness-source.json").write_text('{"x": 1}')
+    assert tree_hash(d) == h1
+    (d / "sub" / "b.txt").write_text("3")
+    assert tree_hash(d) != h1

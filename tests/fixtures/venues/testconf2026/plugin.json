@@ -1,0 +1,2 @@
+{"name": "testconf2026", "description": "fixture venue", "version": "0.0.1",
+ "harness": ["claude", "codex"], "scope": "project", "kind": "venue"}

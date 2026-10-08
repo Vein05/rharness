@@ -6,6 +6,12 @@ DEFAULTS = {
     "handoff_max_days_behind_commit": 1,
     "changelog_window_days": 14,
     "dirty_tree_warn_above": 0,
+    "venue_index": "Vein05/rharness/venues",
+    "fail_on": "warning",
+    "charter_max_words": 600,
+    "handoff_max_words": 600,
+    "changelog_entry_max_words": 400,
+    "brief_max_words": 1500,
 }
 _LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$")
 

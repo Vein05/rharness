@@ -116,3 +116,24 @@ def test_verify_tarball_pure():
         verify_tarball(data, "x.tar.gz", f"{good}  other.tar.gz\n")
     with pytest.raises(ChecksumError):
         verify_tarball(data, "x.tar.gz", "0" * 64 + "  x.tar.gz\n")
+
+
+def test_apply_manifest_refreshes_named_region(tmp_path, monkeypatch):
+    """A file recorded with region='plugin:x' is refreshed from that region of its source."""
+    from rharness.manifest import Manifest
+    from rharness.update import _apply_manifest
+    from rharness import plugin as plugin_mod
+    src = tmp_path / "tpl.md"
+    src.write_text("intro\n<!-- rharness:begin plugin:x -->\nNEW BODY\n<!-- rharness:end plugin:x -->\n")
+    monkeypatch.setattr(plugin_mod, "template_path", lambda source: src)
+    import rharness.update as upd
+    monkeypatch.setattr(upd, "template_path", lambda source: src)
+    root = tmp_path / "p"; (root / ".rharness").mkdir(parents=True)
+    target = root / "AGENTS.md"
+    target.write_text("mine\n<!-- rharness:begin plugin:x -->\nOLD BODY\n<!-- rharness:end plugin:x -->\n")
+    m = Manifest.new(root / ".rharness" / "project.json", "0.3.0")
+    m.record("AGENTS.md", "base", source="whatever", region="plugin:x")
+    replaced, kept = [], []
+    _apply_manifest(root, m, "", {}, False, False, replaced, kept)
+    assert "NEW BODY" in target.read_text() and "mine" in target.read_text()
+    assert replaced == ["AGENTS.md"]
