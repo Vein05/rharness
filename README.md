@@ -5,22 +5,22 @@
 
 <p align="center">
   <a href="https://github.com/Vein05/rharness/actions/workflows/ci.yml"><img src="https://github.com/Vein05/rharness/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
-  <a href="https://github.com/Vein05/rharness/releases"><img src="https://img.shields.io/badge/release-v0.2.0-2563EB" alt="release"></a>
+  <a href="https://github.com/Vein05/rharness/releases"><img src="https://img.shields.io/badge/release-v0.3.0-2563EB" alt="release"></a>
   <img src="https://img.shields.io/badge/python-3.9%2B-2563EB" alt="python 3.9+">
   <img src="https://img.shields.io/badge/deps-none-2563EB" alt="no dependencies">
   <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%7C%20Codex-2563EB" alt="works with Claude Code and Codex">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2563EB" alt="MIT"></a>
 </p>
 
-rharness(research-harness) is an opinionated research harness for ML and NLP work done with
-coding agents. One command gives you a workspace where every paper project
-has a contract the agent must obey, a record of every session, and a lint
-that tells you when the two drift apart. It is markdown and small scripts,
-not an app: the agent reads the files, you edit them, git tracks them.
+rharness (research harness) sets up ML and NLP paper projects for work with
+coding agents. Each project gets a contract the agent follows, a record of
+every session, and a lint that tells you when the two drift apart. It is
+plain markdown and small scripts: the agent reads the files, you edit them,
+git tracks them.
 
 ## The opinions
 
-These are not defaults you configure. They are the product. Also at
+These are the product, not settings. Also at
 [vein05.github.io/rharness](https://vein05.github.io/rharness/#opinions).
 
 1. **A kill criterion before any spend.** Every project starts with
@@ -47,268 +47,133 @@ These are not defaults you configure. They are the product. Also at
 
 ## Quickstart
 
-Install. Requires `python3` 3.9 or newer, `git`, and `tar`; `git-lfs` is
-recommended. The installer downloads the release tarball and its
-`SHA256SUMS` from GitHub Releases and refuses to install on a mismatch.
+Needs Python 3.9+, git, and tar (git-lfs recommended). The installer checks
+the download against its published checksum.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Vein05/rharness/main/install.sh | sh
-```
-
-Create a workspace. This writes the root `AGENTS.md`, a `CLAUDE.md` include,
-lint thresholds, and installs the default `rtk` plugin.
-
-```sh
-rharness init ~/research
-```
-```
-Created workspace at /Users/you/research
-  wrote AGENTS.md
-  wrote CLAUDE.md
-  wrote lint.toml
-Installed plugin rtk
-  wrote .rharness/hooks/rtk-rewrite.sh
-Next: rharness new <slug>   (inside the workspace)
-```
-
-Start a paper project. Run it from anywhere inside the workspace.
-
-```sh
+rharness init ~/research          # the workspace
 cd ~/research
 rharness new seam --title "Paste-boundary instruction absorption"
 ```
-```
-  wrote seam/CHARTER.md
-  wrote seam/AGENTS.md
-  wrote seam/spec/scoring.md
-  wrote seam/paper/writing.md
-  ... 19 files
-Created project seam at /Users/you/research/seam
-Next: fill in CHARTER.md (kill criterion first), then spec/scoring.md
-```
 
-You now have:
+That gives you:
 
 ```
 research/
-  AGENTS.md            orientation, project table, the cross-cutting rules
-  CLAUDE.md            @AGENTS.md
-  lint.toml            lint thresholds
-  .rharness/           manifest, doc archetypes, hook scripts
-  .claude/             hooks and skills (Claude Code only)
-  seam/                a git repo with LFS rules
+  AGENTS.md            rules and the project table; CLAUDE.md includes it
+  lint.toml            lint settings
+  seam/                a git repo
     CHARTER.md         core question, success criterion, kill criterion
     AGENTS.md          repo map, known traps, standing rules
     spec/scoring.md    the headline table, designed before any run
-    research/          the knowledge base; one archetype per document
-    paper/writing.md   the prose rules the paper and living docs follow
+    research/          notes, one document type per file
+    paper/             main.tex, references.bib, writing rules
     handoff/           one file per session, dated
     changelog/         one file per day, append-only
-    data/ papers/ tests/ tools/
 ```
 
-Open `seam/CHARTER.md` with your agent and fill in the kill criterion first.
-The agent has already read `AGENTS.md`, so it knows the rules. Then write
-`spec/scoring.md`. Then the first research document, usually a novelty scan;
-the eleven document skeletons are in `.rharness/archetypes/`.
+Open `seam/CHARTER.md` with your agent and write the kill criterion first,
+then `spec/scoring.md`.
 
-Every session starts oriented. `rharness brief` prints the charter status,
-the newest handoff, the last changelog entry, the authoritative documents,
-and open lint findings for the project you are in. In Claude Code this runs
-automatically at session start, and a Stop hook refuses to let a session end
-on a day with commits but no handoff and changelog.
+## Daily use
 
 ```sh
-rharness brief seam
-```
-```
-# Brief: seam (Paste-boundary instruction absorption) — 2026-09-12
-
-## Charter
-Core question: Do models fold a trailing remark into the pasted document?
-Success criterion: NOT YET
-Kill criterion: NOT TRIGGERED (stop if recall < 0.5 on the held-out split)
-
-## Newest handoff: handoff/2026-09-11.md
-...
+rharness brief          # where things stand: charter, newest handoff, changelog, lint
+rharness hash traces/run-v2.jsonl --note "Table 1"   # freeze a result file
+rharness lint           # check the rules; exits 1 on findings
+rharness doctor         # check the machine and hooks
 ```
 
-When a trace or scored file is frozen, record it. Every number in the paper
-should point at a row in `research/PROVENANCE.md`, and lint fails if a
-recorded file changes or disappears.
+In Claude Code, `brief` runs at session start, and a Stop hook won't let a
+session end on a day with work but no handoff or changelog entry.
 
-```sh
-rharness hash traces/run-v2-full.jsonl --note "Table 1 rows 1-3"
-```
+`lint` checks what a script can check: the kill criterion has a threshold,
+the scoring spec has control and ceiling rows, code has a spec, frozen files
+are unchanged, the bibliography is clean, and the files a new session reads
+are short enough. It does not judge the science.
 
-Check the workspace whenever you like. Lint exits 1 when anything fails, so
-it works in a pre-commit hook or a cron job. To fail on errors only, set
-`fail_on = "error"` in `lint.toml` or pass `--fail-on error`; warnings still
-print. It checks structure and the
-contract fields it can read: that the kill criterion states a threshold,
-that the scoring spec keeps its control and ceiling rows, that code has a
-spec, that recorded artifacts are unchanged, and that `paper/references.bib`
-is sound: cited keys exist, no entry is malformed or duplicated by key or
-DOI, and nothing in it goes uncited. It also caps the words a fresh session
-reads first: CHARTER.md, the newest handoff, the last changelog entry, and
-the project brief (`*_max_words` in `lint.toml`; over the cap warns, over
-twice it fails). It does not judge the science.
-
-```sh
-rharness lint
-```
 ```
 error seam/CHARTER.md: kill criterion states no threshold; the section has only a Status line
-error seam/traces/run-v2-full.jsonl: traces/run-v2-full.jsonl changed since it was recorded (2026-09-11, 8746a9ae0dc60310); re-run `rharness hash` and re-check every number that cites it
-warning seam/spec/: 4 source file(s) but no component spec in spec/ besides scoring.md; code without a spec is a probe
+error seam/traces/run-v2.jsonl: traces/run-v2.jsonl changed since it was recorded (2026-09-11, 8746a9ae0dc60310); re-run `rharness hash` and re-check every number that cites it
 warning seam/handoff/: newest handoff 2026-09-09 is 3 days older than newest commit 2026-09-12
-Summary: 2 errors, 2 warnings
+Summary: 2 errors, 1 warnings
 ```
 
-Check the machine. This is also what catches a silently dropped hook.
-
-```sh
-rharness doctor
-```
-```
-ok   python >= 3.9: 3.12.4
-ok   git on PATH: /opt/homebrew/bin/git
-ok   git-lfs on PATH: /opt/homebrew/bin/git-lfs
-ok   workspace manifest: /Users/you/research/.rharness/manifest.json
-ok   rtk binary on PATH: /opt/homebrew/bin/rtk
-ok   rtk hook registered: /Users/you/research/.claude/settings.json
-```
+Set `fail_on = "error"` in `lint.toml` to fail only on errors.
 
 ## Venues
 
-Attach the submission target to a project. The package comes from
-`venues/<name>/` in this repository, fetched on demand and refreshed when
-older than a day, so deadlines and style files do not go stale in a release.
+Attach a submission target and lint checks the paper against it: page
+limit, required sections, citations, style file, and anonymity.
 
 ```sh
-cd ~/research/seam
 rharness venue add iclr 2027
-rharness venue              # status: deadlines, package age, venue checks
-rharness venue lock         # when the paper is committed to this venue
-rharness venue change aaai 2027
+rharness venue              # deadlines and current findings
+rharness venue lock         # once the paper is committed to this venue
+rharness paper build        # build paper/main.pdf (or download it from Overleaf)
 ```
 
-`venue add` installs the venue's style files into `paper/`, a prefilled
-so-what playbook into `research/`, a section into the project's `AGENTS.md`,
-and records the target in `CHARTER.md`'s revision notes. From then on
-`rharness lint` runs the venue checks: main-body page count, required
-sections, citation keys, style loaded, and an anonymity scan for git author
-names, the git remote, `\author`, `\thanks`, and acknowledgements. Until
-`venue lock`, every venue finding is a warning; after it, findings keep
-their severity and lint warns when the deadline is close and the charter's
-success criterion is still `NOT YET`. With `fail_on = "error"`, a targeted
-venue never fails lint and a locked one fails on its errors.
-
-The page check reads `paper/main.pdf`. Build it with `rharness paper build`
-(with [TinyTeX](https://yihui.org/tinytex/) installed, missing packages are
-pulled through `tlmgr`), or download the compiled PDF from Overleaf into
-`paper/main.pdf`. Neither poppler nor TeX is required to read it.
-
-The same checks run on a LaTeX repository with no rharness files, such as an
-Overleaf git clone:
+Venue findings are warnings until you lock. The checks also run on any LaTeX
+repo, such as an Overleaf clone, with no rharness setup:
 
 ```sh
 rharness lint --venue iclr2027 ~/papers/my-submission
 ```
 
-The main file is `main.tex`, or the one `.tex` file with `\documentclass`
-(`--main FILE` picks one). Only files reached through `\input`, `\include`,
-or `\subfile` are scanned, bib files come from `\bibliography` or
-`\addbibresource`, and the PDF is the main file's name with `.pdf`. Findings
-keep their severity, as if the venue were locked.
+Packages live in [`venues/`](venues/README.md).
 
-Off a TTY, `change`, `unlock`, and `remove` refuse without `--yes` and say so
-in words an agent can relay. From the workspace root, pass `--project <slug>`.
-Venue packages are documented in `venues/README.md`.
+## Existing folders
 
-## Already have a research folder?
-
-`adopt` adds what is missing and never overwrites what exists. Your files
-are recorded as yours, so later updates leave them alone.
+`adopt` adds what is missing and never overwrites your files.
 
 ```sh
-rharness adopt ~/research              # a folder of paper projects
-rharness adopt ~/research/old-paper    # one project
-rharness --dry-run adopt ~/research    # see what it would add first
+rharness --dry-run adopt ~/research    # see what it would add
+rharness adopt ~/research
 ```
-
-A project is any subdirectory with a `CHARTER.md`, an `AGENTS.md`, or a
-`.git`. Adopting a directory that is not a git repo initialises one, so read
-the dry run before adopting a folder you have not looked at in a while.
 
 ## Plugins
 
-Plugins are opt-in packs of markdown guidance, and sometimes a helper or a
-hook, written into a workspace and its projects. Installing one inserts a
-section into `AGENTS.md`, so the agent follows its rules from the next
-session on.
+Optional packs of agent guidance, and sometimes a helper script or hook.
 
-| Plugin | Added to | What it gives you | Needs | Default |
-|---|---|---|---|:---:|
-| [rtk](plugins/rtk/) | Workspace | Token-saving command proxy for Claude Code, registered as a hook; [official project](https://github.com/rtk-ai/rtk) | `rtk`, `jq` (installed by `setup.sh` if missing) | Yes |
-| [figures](plugins/figures/) | Workspace | SVG-first figure pipeline: style guide, geometry checker, icon fetcher, matplotlib style | `rsvg-convert`, `pdffonts`, Pillow | No |
-| [review-panel](plugins/review-panel/) | Workspace | Runs your paper through panels of LLM reviewers at multiple model tiers, with a holdout canary and hard spend ceiling | `OPENROUTER_API_KEY`, `pdftotext`, `pip install openai pyyaml` | No |
-| [wandb](plugins/wandb/) | Workspace + projects | Weights & Biases tracking rules and a run initialiser in every project | `WANDB_API_KEY`, `pip install wandb` | No |
-| [ideas](plugins/ideas/) | Workspace | Ranked ideas backlog with novelty-scan dates and a dead-cells list | nothing | No |
+| Plugin | What it gives you | Default |
+|---|---|:---:|
+| [rtk](plugins/rtk/) | Token-saving command proxy for Claude Code ([rtk](https://github.com/rtk-ai/rtk)) | Yes |
+| [figures](plugins/figures/) | SVG-first figure pipeline and style checks | No |
+| [review-panel](plugins/review-panel/) | Paper review by panels of LLM reviewers, with a spend ceiling | No |
+| [wandb](plugins/wandb/) | Weights & Biases tracking rules | No |
+| [ideas](plugins/ideas/) | Ranked ideas backlog | No |
 
 ```sh
-rharness add figures                                  # built in, no prompt
-rharness add alice/research-plugins/plugins/x         # from GitHub: owner/repo[/subdir]
-rharness add alice/research-plugins/plugins/x@v1.2    # pinned to a tag, branch, or commit
-rharness add ~/code/my-plugin                         # from a local directory
-rharness list                                         # origin, status, source, commit
+rharness add figures                        # built in
+rharness add alice/research-plugins/x@v1.2  # from GitHub; asks first
 ```
 
-Installing a plugin from outside the release means trusting that code on
-your machine: it can add rules the agent will follow, register Claude Code
-hooks, and run a setup script. So `add` first prints what the plugin would
-do, including every hook command, and asks before proceeding. Pass `--yes`
-to accept non-interactively. Built-in plugins ship with the release and
-install without a prompt. `add` also prints any environment variable or
-binary the plugin needs that your shell does not have.
+Plugins from outside this repo can add agent rules, hooks, and a setup
+script, so `add` shows what one will do and asks before installing. Write
+your own: [docs/plugins.md](docs/plugins.md).
 
-Write your own with `rharness plugin new my-plugin`, which scaffolds the
-directory with a README explaining how to publish it. The full format, the
-rules a plugin must respect, and the publish flow are in
-[docs/plugins.md](docs/plugins.md).
+## Updates
 
-## How updates work
+`rharness update` installs the latest release. Files you edited are kept,
+and you get a diff instead.
 
-Every file rharness writes is recorded with a hash in
-`.rharness/manifest.json`. `rharness update` fetches the latest release and
-replaces a file only if it still matches its recorded hash; a file you
-edited is kept and a diff is printed. In `AGENTS.md` and `paper/writing.md`
-rharness owns only the text between `<!-- rharness:begin ... -->` and
-`<!-- rharness:end ... -->` markers. Everything outside them is yours.
-
-## Command reference
+## Commands
 
 | Command | What it does |
 |---|---|
-| `rharness init [dir]` | Create a workspace and install the default plugins |
-| `rharness new <slug> [--title T]` | Scaffold a paper project inside the workspace |
-| `rharness adopt [dir] [--projects a,b]` | Retrofit an existing workspace or project without overwriting |
-| `rharness brief [project]` | Orientation for a fresh session: charter, handoff, changelog, authoritative docs, lint |
-| `rharness hash <paths> [--note T]` | Record frozen artifacts in `research/PROVENANCE.md` |
-| `rharness add <plugin> [--refresh]` | Install a plugin: built-in name, local path, git URL, or `owner/repo[/subdir][@ref]`; external sources ask first, `--yes` accepts |
-| `rharness remove <plugin>` | Uninstall a plugin; modified files are kept and listed |
-| `rharness list` | Plugins with origin, install status, and source |
-| `rharness plugin new <name> [--dir D]` | Scaffold a plugin directory |
-| `rharness lint [dir] [--json] [--fail-on error\|warning] [--venue NAME [--main FILE]]` | Check projects against the rules; exit 1 on findings at or above `fail_on` (default `warning`); `--venue` runs only that venue's checks on a bare LaTeX directory |
-| `rharness venue add\|change\|lock\|unlock\|check\|update\|remove\|list [--project P]` | Attach, inspect, or detach a project's submission target |
-| `rharness paper build` | Build `paper/main.pdf` with latexmk |
-| `rharness doctor` | Check python, git, git-lfs, rtk, and hook registration |
-| `rharness update [--no-fetch] [--force]` | Fetch the latest release, verify it against `SHA256SUMS`, re-apply managed files |
-| `rharness session-check` | Behind the Claude Code Stop hook: today's work needs today's handoff and changelog |
-| `rharness version` | Print the installed version |
+| `init [dir]` | Create a workspace |
+| `new <slug>` | Create a paper project |
+| `adopt [dir]` | Add rharness to an existing folder |
+| `brief [project]` | Orientation for a new session |
+| `hash <paths>` | Record frozen result files |
+| `lint [dir]` | Check projects against the rules |
+| `venue ...` | Add, lock, change, or remove a submission target |
+| `paper build` | Build `paper/main.pdf` |
+| `add`, `remove`, `list`, `plugin new` | Manage plugins |
+| `update`, `doctor`, `version` | Maintenance |
 
-Global flags: `--workspace <dir>` to skip discovery, `--dry-run` to print
-without writing.
+`rharness <command> --help` lists the options.
 
 ## Development
 
@@ -317,4 +182,4 @@ python3 -m pytest -q
 ```
 
 Design: [docs/superpowers/specs/2026-09-09-rharness-design.md](docs/superpowers/specs/2026-09-09-rharness-design.md).
-Cover: `assets/cover/build.py` generates `assets/cover.svg`; `assets/cover-social.png` is the 1280x640 social preview.
+Issues and pull requests: [ISSUES.md](ISSUES.md). Release notes: [changelog/](changelog/README.md).
