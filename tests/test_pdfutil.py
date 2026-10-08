@@ -69,3 +69,20 @@ def test_pdf_text_none_without_tool(tmp_path):
     f = tmp_path / "f.pdf"; f.write_bytes(_plain_pdf(1))
     assert pdfutil.pdf_text(f, env={"PATH": str(tmp_path)}) is None
     assert pdfutil.heading_page(f, ["references"], env={"PATH": str(tmp_path)}) is None
+
+
+def _fake_text(tmp_path, text):
+    b = tmp_path / "bin"; b.mkdir(exist_ok=True)
+    (b / "pdftotext").write_text("#!/bin/sh\nprintf '" + text + "'\n"); (b / "pdftotext").chmod(0o755)
+    f = tmp_path / "e.pdf"; f.write_bytes(_plain_pdf(3))
+    return f, {"PATH": str(b)}
+
+
+def test_body_end_heading_opening_a_page_ends_the_body_before_it(tmp_path):
+    f, env = _fake_text(tmp_path, "body\\n\\fbody\\n\\f\\n 042 \\nLimitations\\ntext\\n")
+    assert pdfutil.body_end(f, ["limitations", "references"], env=env) == 2
+    f, env = _fake_text(tmp_path, "body\\n\\fbody\\n\\fmore body\\nLimitations\\n")
+    assert pdfutil.body_end(f, ["limitations"], env=env) == 3
+    f, env = _fake_text(tmp_path, "Limitations\\n\\fbody\\n")
+    assert pdfutil.body_end(f, ["limitations"], env=env) == 1
+    assert pdfutil.body_end(f, ["appendix"], env=env) is None

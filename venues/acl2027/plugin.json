@@ -1,0 +1,11 @@
+{
+  "name": "acl2027",
+  "description": "ACL 2027 via ARR (January 2027 cycle): deadline, 8-page long papers, required Limitations, double-blind, official ACL style files, ARR review form",
+  "version": "0.1.0",
+  "harness": [
+    "claude",
+    "codex"
+  ],
+  "scope": "project",
+  "kind": "venue"
+}

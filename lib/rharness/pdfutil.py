@@ -71,6 +71,27 @@ def pdf_text(path, env=None):
     return r.stdout
 
 
+def body_end(path, headings, env=None):
+    """Last page of the main body: the page before the first excluded heading when that
+    heading opens its page (only blank lines or line numbers above it), else the
+    heading's own page. None when no heading is found or pdftotext is missing.
+    """
+    text = pdf_text(path, env=env)
+    if text is None:
+        return None
+    wanted = {h.strip().lower() for h in headings}
+    for i, page in enumerate(text.split("\f"), start=1):
+        opening = True
+        for line in page.splitlines():
+            raw = line.strip()
+            s = re.sub(r"^\s*(\d+(\.\d+)*\s+)?", "", line).strip().lower()
+            if s in wanted:
+                return i - 1 if opening and i > 1 else i
+            if raw and not raw.isdigit():
+                opening = False
+    return None
+
+
 def heading_page(path, headings, env=None):
     text = pdf_text(path, env=env)
     if text is None:

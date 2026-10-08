@@ -1,5 +1,14 @@
 [
   {
+    "name": "acl2027",
+    "venue": "acl",
+    "cycle": "2027",
+    "primary": "submission",
+    "deadline": "2027-01-04T23:59:00-12:00",
+    "revision": "2026-10-07",
+    "description": "ACL 2027 via ARR (January 2027 cycle): deadline, 8-page long papers, required Limitations, double-blind, official ACL style files, ARR review form"
+  },
+  {
     "name": "iclr2027",
     "venue": "iclr",
     "cycle": "2027",
@@ -7,5 +16,14 @@
     "deadline": "2026-09-25T23:59:00-12:00",
     "revision": "2026-09-10",
     "description": "ICLR 2027: deadlines, 9-page main body, double-blind, official style files, review form"
+  },
+  {
+    "name": "naacl2027",
+    "venue": "naacl",
+    "cycle": "2027",
+    "primary": "submission",
+    "deadline": "2026-10-12T23:59:00-12:00",
+    "revision": "2026-10-07",
+    "description": "NAACL 2027 via ARR (October 2026 cycle): deadlines, 8-page long papers, required Limitations, double-blind, official ACL style files, ARR review form"
   }
 ]

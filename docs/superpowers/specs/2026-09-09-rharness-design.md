@@ -382,6 +382,13 @@ venues/
 }
 ```
 
+Optional `author_block` says when the venue's style hides `\author` and
+`\thanks` in the build: `{"hidden_if": "<regex>"}` (ACL: `\usepackage[review]{acl}`)
+or `{"hidden_unless": "<regex>"}` (ICLR: `\iclrfinalcopy`), matched against
+the comment-stripped tex. When hidden, the anonymity check skips the author
+block and `\thanks`, and leaves them out of the text it scans for git
+author names.
+
 Rules for the file: timestamps are ISO-8601 with seconds and a UTC offset
 (AoE is `-12:00`); `primary` names one key of `deadlines` and drives the
 base checks and the brief; `revision` is the date the metadata was last
@@ -550,7 +557,9 @@ Generic checks, all local, parameterised by `venue.json`:
 
 - Page count of `paper/main.pdf` against `page_limit.main`. When
   `page_limit.excludes` is set and `pdftotext` is present, the main body
-  ends on the page where the first excluded heading appears; without
+  ends on the page where the first excluded heading appears, or on the page
+  before when that heading opens its page (only blank lines or line numbers
+  above it); without
   `pdftotext` the check reports the total page count as a warning that says
   the limit applies to the main body and cannot be located. Error when
   locked and the located body is over. Without a PDF, the section 7 warning
@@ -720,3 +729,8 @@ needed, and `doctor` says so instead of insisting on TinyTeX.
   `lint.toml`, warning over the cap and error over twice it. This measures
   the context cost the eleven archetypes may impose; the defaults are to be
   revisited after a dogfood project.
+- 2026-10-07: venues `naacl2027` and `acl2027` (ARR). `venue.json` gains the
+  optional `author_block`, and the page check counts a heading that opens a
+  page as the start of the next page, not the end of the body. Both fixed
+  false errors on correctly formatted submissions; `iclr2027` gains
+  `author_block.hidden_unless`.
