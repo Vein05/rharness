@@ -160,8 +160,11 @@ def lint_project(pdir: Path, cfg: dict, template_region=None, venue_checks=True)
         elif region != template_region:
             W("paper/writing.md", "paper/writing.md generic section differs from the template")
 
-    if venue_checks:
-        from . import venuecheck
+    from . import venuecheck
+    if not venuecheck.read_block(pdir):
+        for _, path, msg in venuecheck.project_bib_findings(pdir):
+            W(path, msg)
+    elif venue_checks:
         for sev, path, msg in venuecheck.lint_findings(pdir):
             (E if sev == "error" else W)(path, msg)
     return out

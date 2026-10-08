@@ -147,7 +147,9 @@ it works in a pre-commit hook or a cron job. To fail on errors only, set
 print. It checks structure and the
 contract fields it can read: that the kill criterion states a threshold,
 that the scoring spec keeps its control and ceiling rows, that code has a
-spec, that recorded artifacts are unchanged. It does not judge the science.
+spec, that recorded artifacts are unchanged, and that `paper/references.bib`
+is sound: cited keys exist, no entry is malformed or duplicated by key or
+DOI, and nothing in it goes uncited. It does not judge the science.
 
 ```sh
 rharness lint

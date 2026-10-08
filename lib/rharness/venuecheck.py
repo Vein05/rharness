@@ -5,12 +5,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import gitutil, pdfutil
+from . import bibcheck, gitutil, pdfutil
 from .venue import load_venue, package_dir, read_block, VenueError
 from .venuemeta import days_until
 
-CITE_RE = re.compile(r"\\cite[a-zA-Z*]*\s*(?:\[[^\]]*\]\s*)*\{([^}]*)\}")
-BIBKEY_RE = re.compile(r"^@\w+\s*\{\s*([^,\s]+)\s*,", re.M)
 SECTION_RE = r"\\(?:section|chapter|subsection)\*?\s*\{[^}]*%s"
 INPUT_RE = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}")
 BIBRES_RE = re.compile(r"\\(?:bibliography|addbibresource)\s*(?:\[[^\]]*\]\s*)?\{([^}]+)\}")
@@ -228,6 +226,15 @@ def _check_sections(venue, tex, paper_rel="paper/"):
     return out
 
 
+def project_bib_findings(pdir):
+    """Bib checks for a project with no venue: every finding a warning, silent without a bib."""
+    lay = project_layout(pdir)
+    if not all(b.exists() for b in lay.bibs):
+        return []
+    return [("warning", path, msg) for _, path, msg in _check_cites(lay, _strip_comments(
+        "\n".join(f.read_text(errors="replace") for f in lay.tex)))]
+
+
 def _check_cites(pdir, tex):
     lay = _as_layout(pdir)
     if not lay.bibs:
@@ -235,21 +242,7 @@ def _check_cites(pdir, tex):
     missing = [b for b in lay.bibs if not b.exists()]
     if missing:
         return [("warning", lay.rel(b), f"{b.name} missing; citation keys cannot be checked") for b in missing]
-    out, keys, dups = [], set(), {}
-    for bib in lay.bibs:
-        for k in BIBKEY_RE.findall(bib.read_text(errors="replace")):
-            if k in keys:
-                dups.setdefault(k, lay.rel(bib))
-            keys.add(k)
-    for k in sorted(dups):
-        out.append(("warning", dups[k], f"duplicate bib key {k}"))
-    cited = set()
-    for group in CITE_RE.findall(tex):
-        cited.update(x.strip() for x in group.split(",") if x.strip())
-    names = ", ".join(b.name for b in lay.bibs)
-    for k in sorted(cited - keys):
-        out.append(("error", lay.rel(lay.main), f"citation key {k} is not in {names}"))
-    return out
+    return bibcheck.check(tex, [(b, lay.rel(b)) for b in lay.bibs], lay.rel(lay.main))
 
 
 def _check_pages(pdir, venue, env):

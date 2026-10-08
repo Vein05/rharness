@@ -245,6 +245,7 @@ Per project (each subdirectory with `CHARTER.md`):
 | `spec/scoring.md` has `control` and `ceiling` rows | error |
 | Experiment reports (archetype B) exist while `spec/scoring.md` is still `proposed` | warning |
 | Source files exist but no component spec besides `scoring.md` | warning |
+| Bibliography, for a project with no venue and a `paper/references.bib`: citation keys resolve, duplicate keys, malformed entries (not closed, no key, unreadable fields, no title), the same DOI under two keys, entries never cited (one summary row; none when `\nocite{*}`) | warning |
 | Venue checks (section 10.7): generic set from the binary plus the package's `checks.py`; severity as returned when locked, downgraded to warning when targeted | package-defined |
 | Venue locked, primary deadline within 14 days, success criterion still `NOT YET` | warning |
 | Any venue deadline in the past | warning |
@@ -549,7 +550,10 @@ Generic checks, all local, parameterised by `venue.json`:
   locked and the located body is over. Without a PDF, the section 7 warning
   and skip.
 - Required sections present in the tex sources.
-- Every `\cite` key resolves in `references.bib`; duplicate keys reported.
+- Every `\cite` key resolves in `references.bib`; duplicate keys reported
+  (error and warning). Malformed entries, the same DOI under two keys, and
+  entries never cited are warnings. `\cite` covers the natbib and biblatex
+  variants (`\citet`, `\parencite`, `\nocite`, ...).
 - `main.tex` loads the template's style or class file.
 - Anonymity when `anonymous` is true: author names from `git log`, the
   `git remote` URL, the `\author` block, `\thanks`, and an acknowledgements
@@ -700,3 +704,7 @@ needed, and `doctor` says so instead of insisting on TinyTeX.
   section 10.11. The generic checks take a layout (main file, tex sources,
   bib files, PDF) instead of fixed `paper/` names; projects keep the fixed
   names and their messages are unchanged.
+- 2026-10-07: bibliography checks (`lib/rharness/bibcheck.py`): a small
+  BibTeX parser, malformed entries, duplicate DOIs, and uncited entries,
+  added to the venue generic set and, as warnings, to every project with no
+  venue. Projects with a venue get them once, through the venue checks.
