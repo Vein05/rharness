@@ -9,6 +9,7 @@
   "anonymous": true,
   "author_block": {"hidden_if": "\\\\usepackage\\s*\\[[^\\]]*\\breview\\b[^\\]]*\\]\\s*\\{acl\\}"},
   "template": {"repo": "acl-org/acl-style-files", "ref": "d5adc823ff0f80f98c80405ca0ab66c68e684409", "files": ["acl.sty", "acl_natbib.bst"]},
+  "style_line": "\\usepackage[review]{acl}",
   "required_sections": ["abstract", "introduction", "limitations"],
   "sources": [
     {"kind": "cfp", "url": "https://2027.naacl.org/calls/main_conference_papers/", "retrieved": "2026-10-07"},

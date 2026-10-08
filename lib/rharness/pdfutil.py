@@ -61,11 +61,16 @@ def page_count(path, use_tools: bool = True, env=None):
         return None
 
 
-def pdf_text(path, env=None):
+def pdf_text(path, env=None, layout=True):
+    """Text of the PDF via pdftotext, pages separated by form feeds; None without the tool.
+
+    layout=False gives reading order: a two-column page comes out column by column and
+    margin line numbers (ACL review mode) on lines of their own, which heading detection needs.
+    """
     path = Path(path)
     if not path.exists():
         return None
-    r = _run(["pdftotext", "-layout", str(path), "-"], env=env, timeout=60)
+    r = _run(["pdftotext", *(["-layout"] if layout else []), str(path), "-"], env=env, timeout=60)
     if r is None or r.returncode != 0:
         return None
     return r.stdout
@@ -76,7 +81,7 @@ def body_end(path, headings, env=None):
     heading opens its page (only blank lines or line numbers above it), else the
     heading's own page. None when no heading is found or pdftotext is missing.
     """
-    text = pdf_text(path, env=env)
+    text = pdf_text(path, env=env, layout=False)
     if text is None:
         return None
     wanted = {h.strip().lower() for h in headings}
@@ -93,7 +98,7 @@ def body_end(path, headings, env=None):
 
 
 def heading_page(path, headings, env=None):
-    text = pdf_text(path, env=env)
+    text = pdf_text(path, env=env, layout=False)
     if text is None:
         return None
     wanted = {h.strip().lower() for h in headings}

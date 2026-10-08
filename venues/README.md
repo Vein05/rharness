@@ -118,7 +118,8 @@ date from the page named, at least twice: the conference call, the ARR call
   pinned at `d5adc823ff0f80f98c80405ca0ab66c68e684409` (default branch head,
   2026-06-29). The ARR call links this repository and forbids modified styles.
   `acl.sty` defaults to `final`; `[review]` anonymizes the author block and
-  adds line numbers, which is `author_block.hidden_if`. `checks.py` warns when
+  adds line numbers, which is `author_block.hidden_if` and `style_line`.
+  `checks.py` warns when
   `acl` is loaded without `[review]`.
 - Review form scales in the playbooks come from `aclrollingreview.org/reviewform`
   and its source `reviewform.md`; Soundness, Excitement, and Overall

@@ -23,6 +23,12 @@ def split_pin(spec: str):
     return split_ref(spec)
 
 
+def style_line(venue: dict, stem: str) -> str:
+    """The preamble line that loads the venue style: venue.json style_line, else \\usepackage{stem}."""
+    line = venue.get("style_line")
+    return line if isinstance(line, str) and line else f"\\usepackage{{{stem}}}"
+
+
 def validate(v) -> list:
     errs = []
     if not isinstance(v, dict):
@@ -56,6 +62,8 @@ def validate(v) -> list:
             errs.append("page_limit.main must be a positive integer")
         if "excludes" in pl and not (isinstance(pl["excludes"], list) and all(isinstance(x, str) for x in pl["excludes"])):
             errs.append("page_limit.excludes must be a list of headings")
+    if "style_line" in v and not (isinstance(v["style_line"], str) and v["style_line"].strip()):
+        errs.append("style_line must be a non-empty string")
     ab = v.get("author_block")
     if ab is not None:
         keys = set(ab) if isinstance(ab, dict) else set()

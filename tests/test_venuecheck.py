@@ -254,3 +254,15 @@ def test_author_block_hidden_unless_final_copy(venue_project):
     assert any("author block" in m for m in _anon_msgs(p, v, final))
     commented = named.replace(r"\begin{document}", "% \\iclrfinalcopy\n\\begin{document}")
     assert _anon_msgs(p, v, commented) == []
+
+
+
+def test_style_line_names_the_venue_preamble_line(tmp_path):
+    from rharness.venuemeta import style_line, validate
+    venue = {"template": {"repo": "x/y", "ref": "main", "files": ["acl.sty"]}}
+    assert style_line(venue, "acl") == r"\usepackage{acl}"
+    venue["style_line"] = r"\usepackage[review]{acl}"
+    msg = VC._check_style(tmp_path, venue, "\\documentclass{article}\n")[0][2]
+    assert r"add \usepackage[review]{acl}" in msg
+    assert VC._check_style(tmp_path, venue, "\\usepackage[review]{acl}\n") == []
+    assert any("style_line" in e for e in validate({"style_line": ""}))

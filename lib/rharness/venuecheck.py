@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import bibcheck, gitutil, pdfutil
 from .venue import load_venue, package_dir, read_block, VenueError
-from .venuemeta import days_until
+from .venuemeta import days_until, style_line
 
 SECTION_RE = r"\\(?:section|chapter|subsection)\*?\s*\{[^}]*%s"
 INPUT_RE = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}")
@@ -210,7 +210,7 @@ def _check_style(pdir, venue, tex):
     marker = main.exists() and "% rharness:venue-style" in main.read_text(errors="replace")
     where = "at the % rharness:venue-style line" if marker else "in the preamble"
     return [("error", lay.rel(main),
-             f"{main.name} does not load {stem}; add \\usepackage{{{stem}}} {where}")]
+             f"{main.name} does not load {stem}; add {style_line(venue, stem)} {where}")]
 
 
 def _check_sections(venue, tex, paper_rel="paper/"):

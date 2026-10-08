@@ -86,3 +86,20 @@ def test_body_end_heading_opening_a_page_ends_the_body_before_it(tmp_path):
     f, env = _fake_text(tmp_path, "Limitations\\n\\fbody\\n")
     assert pdfutil.body_end(f, ["limitations"], env=env) == 1
     assert pdfutil.body_end(f, ["appendix"], env=env) is None
+
+
+def test_headings_read_in_reading_order_not_layout(tmp_path):
+    """-layout puts ACL review line numbers and the other column on the heading's line."""
+    b = tmp_path / "bin"; b.mkdir()
+    (b / "pdftotext").write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        "  *-layout*) printf 'body\\n\\fbody\\n\\fLimitations      1665\\n' ;;\n"
+        "  *) printf 'body\\n\\fbody\\n\\fLimitations\\n1665\\nSome limits.\\n' ;;\n"
+        "esac\n")
+    (b / "pdftotext").chmod(0o755)
+    f = tmp_path / "e.pdf"; f.write_bytes(_plain_pdf(3))
+    env = {"PATH": str(b)}
+    assert pdfutil.body_end(f, ["limitations"], env=env) == 2
+    assert pdfutil.heading_page(f, ["limitations"], env=env) == 3
+    assert "1665" in pdfutil.pdf_text(f, env=env)  # the anonymity scan still reads the layout text
